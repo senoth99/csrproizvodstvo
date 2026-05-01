@@ -1,0 +1,172 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String        @id @default(cuid())
+  name           String
+  firstName      String?
+  lastName       String?
+  telegramId     String?       @unique
+  telegramUsername String?
+  telegramPhotoUrl String?
+  profileCompleted Boolean       @default(false)
+  role           String        @default("EMPLOYEE")
+  isActive       Boolean       @default(true)
+  color          String        @default("#1f8f5f")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  accessTokens   AccessToken[]
+  shifts         Shift[]
+  timeLogs       ShiftTimeLog[]
+  reports        ShiftReport[]
+  chatMessages   ChatMessage[]
+  auditActions   AuditLog[]    @relation("AuditActor")
+  createdShifts  Shift[]       @relation("ShiftCreatedBy")
+  updatedShifts  Shift[]       @relation("ShiftUpdatedBy")
+}
+
+model AllowedTelegramUser {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  role      String   @default("EMPLOYEE")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AccessToken {
+  id         String    @id @default(cuid())
+  userId     String
+  tokenHash  String
+  isActive   Boolean   @default(true)
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+  revokedAt  DateTime?
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Zone {
+  id          String      @id @default(cuid())
+  name        String
+  description String?
+  color       String?
+  sortOrder   Int         @default(0)
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  limits      ZoneLimit[]
+  shifts      Shift[]
+}
+
+model ZoneLimit {
+  id           String   @id @default(cuid())
+  zoneId       String
+  dayOfWeek    Int?
+  startTime    String
+  endTime      String
+  maxEmployees Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  zone         Zone     @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  @@index([zoneId, dayOfWeek])
+}
+
+model ScheduleWeek {
+  id            String   @id @default(cuid())
+  weekStartDate DateTime @unique
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Shift {
+  id            String        @id @default(cuid())
+  userId        String
+  zoneId        String
+  weekStartDate DateTime
+  dayOfWeek     Int
+  startTime     String
+  endTime       String
+  status        String        @default("PLANNED")
+  source        String        @default("SELF")
+  comment       String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  createdById   String?
+  updatedById   String?
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  zone          Zone          @relation(fields: [zoneId], references: [id], onDelete: Restrict)
+  createdBy     User?         @relation("ShiftCreatedBy", fields: [createdById], references: [id])
+  updatedBy     User?         @relation("ShiftUpdatedBy", fields: [updatedById], references: [id])
+  timeLog       ShiftTimeLog?
+  report        ShiftReport?
+  chatMessages  ChatMessage[]
+
+  @@index([weekStartDate, dayOfWeek, zoneId])
+  @@index([userId, weekStartDate, dayOfWeek])
+}
+
+model ShiftTimeLog {
+  id        String    @id @default(cuid())
+  shiftId   String    @unique
+  userId    String
+  startedAt DateTime?
+  endedAt   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  shift     Shift     @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ShiftReport {
+  id        String   @id @default(cuid())
+  shiftId   String   @unique
+  userId    String
+  text      String
+  createdAt DateTime @default(now())
+  shift     Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String?
+  action      String
+  entityType  String
+  entityId    String?
+  payload     String?
+  createdAt   DateTime @default(now())
+  actor       User?    @relation("AuditActor", fields: [actorUserId], references: [id])
+
+  @@index([entityType, entityId])
+}
+
+model SystemSettings {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ChatMessage {
+  id        String          @id @default(cuid())
+  userId    String
+  shiftId   String?
+  type      String          @default("MANUAL")
+  text      String
+  createdAt DateTime        @default(now())
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shift     Shift?          @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+}
