@@ -1,6 +1,7 @@
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { resolveAppPublicBaseUrl } from "@/lib/appUrl";
+import { noSessionRedirectPath } from "@/lib/noSessionRedirect";
 import { sessionSecretBytes } from "@/lib/sessionSecret";
 
 const PUBLIC_PATHS = [
@@ -12,14 +13,15 @@ const PUBLIC_PATHS = [
 ];
 
 /** Любой сбой внутри middleware в Next превращался бы в сырое Internal Server Error. */
-function redirectToTelegramLogin(req: NextRequest): NextResponse {
+function redirectNoSession(req: NextRequest): NextResponse {
+  const path = noSessionRedirectPath(req);
   try {
-    return NextResponse.redirect(new URL("/telegram/login", req.url));
+    return NextResponse.redirect(new URL(path, req.url));
   } catch {
     try {
-      return NextResponse.redirect(new URL("/telegram/login", `${resolveAppPublicBaseUrl()}/`));
+      return NextResponse.redirect(new URL(path, `${resolveAppPublicBaseUrl()}/`));
     } catch {
-      return NextResponse.redirect("http://127.0.0.1:3000/telegram/login");
+      return NextResponse.redirect(`http://127.0.0.1:3000${path}`);
     }
   }
 }
@@ -53,12 +55,12 @@ async function middlewareInner(req: NextRequest): Promise<NextResponse> {
   }
 
   const cookie = req.cookies.get("ps_session")?.value;
-  if (!cookie) return redirectToTelegramLogin(req);
+  if (!cookie) return redirectNoSession(req);
   try {
     await jwtVerify(cookie, sessionSecretBytes());
     return NextResponse.next({ request: { headers: requestHeaders } });
   } catch {
-    return redirectToTelegramLogin(req);
+    return redirectNoSession(req);
   }
 }
 
@@ -68,9 +70,9 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   } catch (e) {
     console.error("[middleware:fatal]", e);
     try {
-      return redirectToTelegramLogin(req);
+      return redirectNoSession(req);
     } catch {
-      return NextResponse.redirect("http://127.0.0.1:3000/telegram/login");
+      return NextResponse.redirect("http://127.0.0.1:3000/access-denied");
     }
   }
 }
