@@ -20,7 +20,7 @@ echo "==> Generating Prisma client"
 npx prisma generate
 
 echo "==> Applying database migrations (SQLite)"
-npx prisma migrate deploy
+bash scripts/prisma-sqlite-migrate.sh
 
 echo "==> Building Next.js app"
 npm run build

@@ -5,8 +5,8 @@ cd /app || exit 1
 url="${DATABASE_URL:-}"
 case "$url" in
 file:*|"file:"*)
-  echo "[entrypoint] SQLite — prisma migrate deploy"
-  npx prisma migrate deploy --skip-generate
+  echo "[entrypoint] SQLite — prisma migrate (с baseline при P3005)"
+  sh /app/scripts/prisma-sqlite-migrate.sh || exit 1
   ;;
 esac
 exec "$@"

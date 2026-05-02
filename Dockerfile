@@ -25,8 +25,8 @@ COPY --from=build /app/.next ./.next
 COPY --from=build /app/public ./public
 COPY --from=build /app/prisma ./prisma
 COPY next.config.ts ./
-COPY scripts/docker-entrypoint.sh ./scripts/docker-entrypoint.sh
-RUN chmod +x ./scripts/docker-entrypoint.sh
+COPY scripts/docker-entrypoint.sh scripts/prisma-sqlite-migrate.sh ./scripts/
+RUN chmod +x ./scripts/docker-entrypoint.sh ./scripts/prisma-sqlite-migrate.sh
 
 EXPOSE 3000
 ENTRYPOINT ["/app/scripts/docker-entrypoint.sh"]
