@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { Pencil, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Pencil, UserX, X } from "lucide-react";
 import {
   addAllowedTelegramUser,
   adminSetTelegramUserManager,
@@ -68,6 +69,7 @@ export function TelegramAccessForm({
   const [pending, start] = useTransition();
   const [error, setError] = useState("");
   const [managerToggleError, setManagerToggleError] = useState("");
+  const router = useRouter();
   const superAdminUsername = "contact_voropaev";
 
   useEffect(() => {
@@ -187,18 +189,54 @@ export function TelegramAccessForm({
                 <div className="text-xs text-muted">@{row.username}</div>
               </div>
             </div>
-            <button
-              type="button"
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border bg-surface text-muted transition hover:text-foreground"
-              onClick={() => {
-                setSelected(row);
-                setEditFirstName(row.firstName);
-                setEditLastName(row.lastName);
-              }}
-              aria-label={`Редактировать @${row.username}`}
-            >
-              <Pencil size={15} />
-            </button>
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border bg-surface text-muted transition hover:text-foreground"
+                onClick={() => {
+                  setSelected(row);
+                  setEditFirstName(row.firstName);
+                  setEditLastName(row.lastName);
+                }}
+                aria-label={`Редактировать @${row.username}`}
+              >
+                <Pencil size={15} />
+              </button>
+              <button
+                type="button"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border bg-surface text-muted transition hover:border-red-400/40 hover:text-red-400"
+                disabled={
+                  pending ||
+                  !row.accessRowId ||
+                  row.role === UserRole.SUPER_ADMIN ||
+                  row.username === superAdminUsername
+                }
+                title="Отозвать доступ"
+                aria-label={`Отозвать доступ @${row.username}`}
+                onClick={() => {
+                  if (
+                    !row.accessRowId ||
+                    row.role === UserRole.SUPER_ADMIN ||
+                    row.username === superAdminUsername
+                  ) {
+                    return;
+                  }
+                  if (!window.confirm(`Отозвать доступ у @${row.username}?`)) return;
+                  setError("");
+                  start(async () => {
+                    try {
+                      await revokeTelegramAccessByUsername(row.username);
+                      if (selected?.username === row.username) setSelected(null);
+                      router.refresh();
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : "Не удалось отозвать доступ");
+                    }
+                  });
+                }}
+              >
+                <UserX size={15} aria-hidden />
+              </button>
+            </div>
           </div>
         ))}
       </div>
