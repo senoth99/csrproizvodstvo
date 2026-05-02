@@ -19,14 +19,24 @@ declare global {
 }
 
 const POLL_MS = 50;
+/** После загрузки SDK: ~4 с на появление initData в WebView. */
 const POLL_MAX = 80;
 
 export default function TelegramLoginPage() {
-  const [phase, setPhase] = useState<"loading" | "outside" | "error">("loading");
+  const [phase, setPhase] = useState<"loading" | "error">("loading");
   const [error, setError] = useState("");
+  const [webAppScriptReady, setWebAppScriptReady] = useState(false);
   const doneRef = useRef(false);
 
   useEffect(() => {
+    const fallback = window.setTimeout(() => {
+      setWebAppScriptReady((ready) => ready || true);
+    }, 8000);
+    return () => window.clearTimeout(fallback);
+  }, []);
+
+  useEffect(() => {
+    if (!webAppScriptReady) return;
     let cancelled = false;
 
     (async () => {
@@ -63,28 +73,30 @@ export default function TelegramLoginPage() {
         await new Promise((r) => setTimeout(r, POLL_MS));
       }
       if (!cancelled && !doneRef.current) {
-        setPhase("outside");
+        window.location.replace("/access-denied");
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [webAppScriptReady]);
 
   return (
     <>
-      <Script src="https://telegram.org/js/telegram-web-app.js" strategy="afterInteractive" />
+      <Script
+        src="https://telegram.org/js/telegram-web-app.js"
+        strategy="afterInteractive"
+        onReady={() => setWebAppScriptReady(true)}
+      />
       <AuthScreenShell
         title="Вход"
         description={
           phase === "loading"
             ? "Подключение к Telegram…"
-            : phase === "outside"
-              ? "Этот вход доступен только из Telegram Mini App. Откройте бота и запустите приложение из меню или с кнопки под строкой ввода."
-              : phase === "error"
-                ? "Не удалось войти. Закройте Mini App и откройте снова из Telegram."
-                : undefined
+            : phase === "error"
+              ? "Не удалось войти. Закройте Mini App и откройте снова из Telegram."
+              : undefined
         }
       >
         {phase === "loading" ? (
