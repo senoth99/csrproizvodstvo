@@ -1,4 +1,4 @@
-# Сборка: docker build -t scheduler .
+# Сборка: docker build --build-arg NEXT_PUBLIC_BUILD_REF=$(git rev-parse --short HEAD) -t scheduler .
 # Запуск: см. `.env.example` (раздел Production) — нужен volume для SQLite или отдельный DATABASE_URL.
 
 FROM node:22-alpine AS deps
@@ -9,6 +9,8 @@ RUN npm ci
 FROM deps AS build
 WORKDIR /app
 COPY . .
+ARG NEXT_PUBLIC_BUILD_REF=unknown
+ENV NEXT_PUBLIC_BUILD_REF=$NEXT_PUBLIC_BUILD_REF
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npx prisma generate && npm run build
 

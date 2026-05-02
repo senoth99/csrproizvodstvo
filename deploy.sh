@@ -23,6 +23,10 @@ echo "==> Applying database migrations (SQLite)"
 bash scripts/prisma-sqlite-migrate.sh
 
 echo "==> Building Next.js app"
+if [[ -z "${NEXT_PUBLIC_BUILD_REF:-}" ]]; then
+  export NEXT_PUBLIC_BUILD_REF="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+fi
+echo "    NEXT_PUBLIC_BUILD_REF=${NEXT_PUBLIC_BUILD_REF}"
 npm run build
 
 echo "==> Reloading PM2 app"

@@ -22,6 +22,8 @@ const POLL_MS = 50;
 /** После загрузки SDK: ~4 с на появление initData в WebView. */
 const POLL_MAX = 80;
 
+const BUILD_REF = process.env.NEXT_PUBLIC_BUILD_REF?.trim();
+
 export default function TelegramLoginPage() {
   const [phase, setPhase] = useState<"loading" | "error">("loading");
   const [error, setError] = useState("");
@@ -112,6 +114,12 @@ export default function TelegramLoginPage() {
 
         {phase === "error" && error ? (
           <p className="text-center text-sm font-medium text-foreground/85">{error}</p>
+        ) : null}
+
+        {BUILD_REF ? (
+          <p className="pt-2 text-center font-mono text-[10px] leading-tight text-muted/45" title="Метка сборки на сервере">
+            build {BUILD_REF}
+          </p>
         ) : null}
       </AuthScreenShell>
     </>
