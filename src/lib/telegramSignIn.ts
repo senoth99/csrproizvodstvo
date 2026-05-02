@@ -17,12 +17,18 @@ export type TgMiniAppUser = {
 };
 
 export async function getTelegramAllowanceRole(tgUser: TgMiniAppUser): Promise<UserRoleValue | null> {
-  const adminUsername = (process.env.TELEGRAM_ADMIN_USERNAME ?? "contact_voropaev").replace("@", "").toLowerCase();
+  const rawAdminUser = process.env.TELEGRAM_ADMIN_USERNAME?.trim();
+  const adminUsername = (rawAdminUser && rawAdminUser.length > 0 ? rawAdminUser : "contact_voropaev")
+    .replace(/^@+/, "")
+    .toLowerCase();
+  const adminTgId = process.env.TELEGRAM_ADMIN_TELEGRAM_ID?.trim();
   const normalizedUsername = (tgUser.username ?? "").toLowerCase();
   const allowed = await prisma.allowedTelegramUser.findFirst({
     where: { username: normalizedUsername, isActive: true }
   });
-  const fallbackAdminAllowed = normalizedUsername === adminUsername;
+  const fallbackByUsername = normalizedUsername.length > 0 && normalizedUsername === adminUsername;
+  const fallbackById = Boolean(adminTgId && String(tgUser.id) === adminTgId);
+  const fallbackAdminAllowed = fallbackByUsername || fallbackById;
   if (!allowed && !fallbackAdminAllowed) return null;
   return (
     (allowed?.role as UserRoleValue | undefined) ??

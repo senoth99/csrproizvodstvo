@@ -3,16 +3,15 @@ import type { NextRequest } from "next/server";
 /**
  * Без сессии middleware ведёт на страницу обмена initData или сразу на «доступ запрещён».
  * Mini App и мобильные браузеры → `/telegram/login` (там JS читает initData и ставит cookie).
- * В **production** типичный десктопный браузер → `/access-denied`, без лишнего `/telegram/login`.
- * В development всегда `/telegram/login`, чтобы локально не упираться в «доступ запрещён».
- *
- * В production отключить редирект на /access-denied: `AUTH_DESKTOP_NO_SESSION_ACCESS_DENIED=false`.
+ * В **production** при `AUTH_DESKTOP_NO_SESSION_ACCESS_DENIED=true`: десктопный браузер → `/access-denied`.
+ * По умолчанию все без сессии идут на `/telegram/login` (надёжнее для Telegram Desktop и Mini App).
+ * В development всегда `/telegram/login`.
  */
 export function noSessionRedirectPath(req: NextRequest): "/telegram/login" | "/access-denied" {
   if (process.env.NODE_ENV !== "production") {
     return "/telegram/login";
   }
-  if (process.env.AUTH_DESKTOP_NO_SESSION_ACCESS_DENIED === "false") {
+  if (process.env.AUTH_DESKTOP_NO_SESSION_ACCESS_DENIED !== "true") {
     return "/telegram/login";
   }
   const ua = req.headers.get("user-agent") ?? "";
