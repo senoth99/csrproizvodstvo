@@ -40,10 +40,7 @@ export async function POST(req: Request) {
     const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
     if (!botToken) {
       return NextResponse.json(
-        {
-          error:
-            "Не задан TELEGRAM_BOT_TOKEN в .env. Для Mini App входа нужен токен бота; локально можно TELEGRAM_ALLOW_DEV_LOGIN=true и вход с кнопки dev на /telegram/login."
-        },
+        { error: "Не задан TELEGRAM_BOT_TOKEN в .env — без него Mini App не авторизует." },
         { status: 503 }
       );
     }

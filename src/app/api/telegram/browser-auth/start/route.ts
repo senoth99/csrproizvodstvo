@@ -7,10 +7,13 @@ import { generateLoginLinkToken } from "@/lib/telegramBotHelpers";
 const TTL_MINUTES = 15;
 
 export async function POST() {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Вход только через Telegram Mini App." }, { status: 403 });
+  }
+
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const botUser = (process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "").replace(/^@/, "").trim();
-  const devBypass =
-    process.env.NODE_ENV !== "production" && process.env.TELEGRAM_ALLOW_DEV_LOGIN === "true";
+  const devBypass = process.env.TELEGRAM_ALLOW_DEV_LOGIN === "true";
 
   if ((!botToken || !botUser) && !devBypass) {
     return NextResponse.json(

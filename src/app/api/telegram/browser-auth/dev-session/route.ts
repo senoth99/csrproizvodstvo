@@ -13,6 +13,10 @@ function resolveDevRole(): UserRoleValue {
 }
 
 export async function POST() {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Dev-вход отключён в production." }, { status: 403 });
+  }
+
   if (process.env.VERCEL) {
     return NextResponse.json({ error: "Dev-вход отключён при деплое на Vercel" }, { status: 403 });
   }
@@ -20,8 +24,7 @@ export async function POST() {
   if (process.env.TELEGRAM_ALLOW_DEV_LOGIN !== "true") {
     return NextResponse.json(
       {
-        error:
-          "Включите TELEGRAM_ALLOW_DEV_LOGIN=true в .env (и NEXT_PUBLIC_TELEGRAM_AUTH_DEV=true для кнопки на клиенте)"
+        error: "Включите TELEGRAM_ALLOW_DEV_LOGIN=true в .env (только development)."
       },
       { status: 403 }
     );

@@ -1,10 +1,8 @@
 "use client";
 
 import Script from "next/script";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AuthScreenShell } from "@/components/AuthScreenShell";
-import { TelegramBotLinkAuth } from "@/components/TelegramBotLinkAuth";
-import { TelegramDevBypassLogin } from "@/components/TelegramDevBypassLogin";
 import type { AccessDeniedPayload } from "@/lib/accessDenied";
 import { isAccessDeniedResponse } from "@/lib/accessDenied";
 
@@ -20,86 +18,88 @@ declare global {
   }
 }
 
-const SHOW_DEV_LOGIN = process.env.NEXT_PUBLIC_TELEGRAM_AUTH_DEV === "true";
+const POLL_MS = 50;
+const POLL_MAX = 80;
 
 export default function TelegramLoginPage() {
-  const [loading, setLoading] = useState(true);
-  const [showBrowserFallback, setShowBrowserFallback] = useState(false);
+  const [phase, setPhase] = useState<"loading" | "outside" | "error">("loading");
   const [error, setError] = useState("");
-  const navigateAfterLogin = useCallback((onboardingRequired: boolean) => {
-    window.location.href = onboardingRequired ? "/welcome" : "/schedule";
-  }, []);
+  const doneRef = useRef(false);
 
   useEffect(() => {
-    const loginMiniApp = async () => {
-      try {
-        const app = window.Telegram?.WebApp;
-        if (!app?.initData) {
-          setShowBrowserFallback(true);
-          setLoading(false);
-          return;
-        }
+    let cancelled = false;
 
-        app.ready();
-        app.expand();
-
-        const res = await fetch("/api/telegram/auth", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ initData: app.initData })
-        });
-        const data = (await res.json()) as AccessDeniedPayload & { onboardingRequired?: boolean };
-        if (isAccessDeniedResponse(res.status, data)) {
-          window.location.replace("/access-denied");
-          return;
+    (async () => {
+      for (let i = 0; i < POLL_MAX && !cancelled; i++) {
+        const WebApp = window.Telegram?.WebApp;
+        const initData = WebApp?.initData?.trim();
+        if (WebApp && initData) {
+          if (doneRef.current) return;
+          doneRef.current = true;
+          try {
+            WebApp.ready();
+            WebApp.expand();
+            const res = await fetch("/api/telegram/auth", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ initData })
+            });
+            const data = (await res.json()) as AccessDeniedPayload & { error?: string };
+            if (isAccessDeniedResponse(res.status, data)) {
+              window.location.replace("/access-denied");
+              return;
+            }
+            if (!res.ok) throw new Error(data.error ?? "Авторизация не удалась");
+            const onboarding = Boolean((data as { onboardingRequired?: boolean }).onboardingRequired);
+            window.location.replace(onboarding ? "/welcome" : "/schedule");
+            return;
+          } catch (e) {
+            doneRef.current = false;
+            setError(e instanceof Error ? e.message : "Ошибка авторизации");
+            setPhase("error");
+            return;
+          }
         }
-        if (!res.ok) throw new Error(data.error ?? "Авторизация через Telegram не удалась");
-        navigateAfterLogin(Boolean(data.onboardingRequired));
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Ошибка авторизации");
-        setShowBrowserFallback(true);
-      } finally {
-        setLoading(false);
+        await new Promise((r) => setTimeout(r, POLL_MS));
       }
-    };
-    loginMiniApp();
-  }, [navigateAfterLogin]);
+      if (!cancelled && !doneRef.current) {
+        setPhase("outside");
+      }
+    })();
 
-  const subtitle = loading ? (
-    "Подключение к Telegram Mini App… если вы в браузере, ниже появится вход через бота."
-  ) : showBrowserFallback && error ? (
-    "Не получилось войти через Mini App — воспользуйтесь браузерным способом ниже."
-  ) : null;
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <>
-      {/*
-       * beforeInteractive поддерживается в основном из корневого layout (Server Component).
-       * В клиентской странице на части сборок/next dev это давало Internal Server Error.
-       */}
       <Script src="https://telegram.org/js/telegram-web-app.js" strategy="afterInteractive" />
-      <AuthScreenShell title="Авторизация через Telegram" description={subtitle || undefined}>
-        {SHOW_DEV_LOGIN ? (
-          <div className="mb-6">
-            <TelegramDevBypassLogin />
-          </div>
-        ) : null}
-        {loading ? (
+      <AuthScreenShell
+        title="Вход"
+        description={
+          phase === "loading"
+            ? "Подключение к Telegram…"
+            : phase === "outside"
+              ? "Этот вход доступен только из Telegram Mini App. Откройте бота и запустите приложение из меню или с кнопки под строкой ввода."
+              : phase === "error"
+                ? "Не удалось войти. Закройте Mini App и откройте снова из Telegram."
+                : undefined
+        }
+      >
+        {phase === "loading" ? (
           <div className="flex flex-col items-center gap-3 py-2">
             <div className="flex items-center justify-center gap-1.5 pt-2">
               <span className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.3s]" />
               <span className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.15s]" />
               <span className="h-2 w-2 animate-bounce rounded-full bg-accent" />
             </div>
-            <p className="text-xs text-muted">Проверяем аккаунт…</p>
+            <p className="text-xs text-muted">Входим по вашему аккаунту Telegram…</p>
           </div>
         ) : null}
 
-        {!loading && showBrowserFallback ? (
-          <div className="space-y-4" data-no-swipe="true">
-            {error ? <p className="text-center text-sm font-medium text-foreground/85">{error}</p> : null}
-            <TelegramBotLinkAuth />
-          </div>
+        {phase === "error" && error ? (
+          <p className="text-center text-sm font-medium text-foreground/85">{error}</p>
         ) : null}
       </AuthScreenShell>
     </>

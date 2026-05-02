@@ -8,10 +8,6 @@ const PUBLIC_PATHS = [
   "/need-link",
   "/access-denied",
   "/telegram/login",
-  "/api/telegram/auth",
-  "/api/telegram/browser-auth/start",
-  "/api/telegram/browser-auth/complete",
-  "/api/telegram/browser-auth/dev-session",
   "/api/telegram/webhook"
 ];
 

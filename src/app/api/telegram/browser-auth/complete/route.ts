@@ -4,6 +4,10 @@ import { hashToken } from "@/lib/auth";
 import { createSessionResponseFromTgUser, type TgMiniAppUser } from "@/lib/telegramSignIn";
 
 export async function POST(req: Request) {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Вход только через Telegram Mini App." }, { status: 403 });
+  }
+
   try {
     const body = (await req.json().catch(() => null)) as { token?: unknown } | null;
     if (!body || typeof body !== "object") {

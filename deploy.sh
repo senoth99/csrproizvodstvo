@@ -1,20 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_DIR="/var/www/production-scheduler"
-APP_NAME="production-scheduler"
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_NAME="csrproizvodstvo"
 
-echo "==> Deploying ${APP_NAME} in ${APP_DIR}"
-
-if [[ ! -d "${APP_DIR}" ]]; then
-  echo "ERROR: ${APP_DIR} not found"
-  exit 1
-fi
+echo "==> Deploying Next.js app in ${APP_DIR}"
 
 cd "${APP_DIR}"
 
 if [[ ! -f ".env" ]]; then
-  echo "ERROR: .env file missing in ${APP_DIR}"
+  echo "ERROR: .env file missing in ${APP_DIR} (copy from .env.example)"
   exit 1
 fi
 
@@ -24,15 +19,15 @@ npm ci
 echo "==> Generating Prisma client"
 npx prisma generate
 
-echo "==> Applying database schema"
-npx prisma db push
+echo "==> Applying database migrations (SQLite)"
+npx prisma migrate deploy
 
 echo "==> Building Next.js app"
 npm run build
 
 echo "==> Reloading PM2 app"
 if pm2 describe "${APP_NAME}" >/dev/null 2>&1; then
-  pm2 reload "${APP_NAME}"
+  pm2 reload ecosystem.config.js
 else
   pm2 start ecosystem.config.js
 fi
