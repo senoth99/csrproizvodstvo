@@ -2,15 +2,12 @@
 
 import { addWeeks, formatISO } from "date-fns";
 import { CalendarClock, ChevronLeft, ChevronRight } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 export function WeekPicker({ current }: { current: Date }) {
   const router = useRouter();
-  const params = useSearchParams();
   const setWeek = (date: Date) => {
-    const sp = new URLSearchParams(params.toString());
-    sp.set("week", formatISO(date, { representation: "date" }));
-    router.push(`/schedule?${sp.toString()}`);
+    router.push(`/schedule?week=${formatISO(date, { representation: "date" })}`);
   };
   return (
     <div className="flex flex-wrap gap-2">

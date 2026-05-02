@@ -2,16 +2,48 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer components {
+  .surface-row-link {
+    @apply flex min-h-12 w-full touch-manipulation items-center gap-3 rounded-lg border border-border bg-transparent px-4 py-3.5 text-left text-foreground no-underline outline-none ring-0 transition;
+    @apply hover:bg-foreground/[0.05] active:bg-foreground/[0.08];
+    @apply focus-visible:ring-1 focus-visible:ring-foreground/35;
+  }
+
+  .manager-modal-overlay {
+    @apply fixed inset-0 z-[170] flex items-center justify-center bg-black/90 p-3 backdrop-blur-[1px];
+  }
+
+  .manager-modal-panel {
+    @apply w-full max-w-md rounded-lg border border-border bg-card p-4;
+  }
+
+  .ui-section-kicker {
+    @apply text-[10px] font-semibold uppercase tracking-display text-muted;
+  }
+
+  .ui-section-kicker-strong {
+    @apply text-[10px] font-bold uppercase tracking-display text-muted;
+  }
+
+  /** Заголовки экранов в духе референса (caps + широкий трекинг). */
+  .ui-page-title {
+    @apply text-lg font-bold uppercase tracking-display text-foreground sm:text-xl;
+  }
+
+  /** Текстовая ссылка с тонким подчёркиванием у baseline. */
+  .link-tech {
+    @apply font-medium text-foreground underline decoration-foreground/45 decoration-1 underline-offset-[5px] transition hover:decoration-foreground;
+  }
+}
+
 html,
 body {
   min-height: 100%;
 }
 
 body {
-  @apply bg-background text-foreground antialiased;
-  min-height: 100vh;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
-  background-image: radial-gradient(circle at 20% -10%, rgba(255, 255, 255, 0.06), transparent 40%);
+  @apply min-h-[100dvh] bg-background font-sans text-foreground antialiased;
+  letter-spacing: 0.03em;
   overscroll-behavior-y: none;
 }
 
@@ -19,8 +51,7 @@ body {
   --app-max: 480px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --shadow-premium: 0 20px 55px rgba(0, 0, 0, 0.45);
-  --tap-scale: 0.985;
+  --tap-scale: 1;
 }
 
 a,
@@ -28,39 +59,51 @@ button {
   -webkit-tap-highlight-color: transparent;
 }
 
-button:active,
+/* Lucide: ультратонкий контур */
+:where(.lucide) {
+  stroke-width: 1.12;
+}
+
+button:active:not(:disabled),
 a:active {
-  transform: scale(var(--tap-scale));
+  opacity: 0.88;
 }
 
 .card {
-  @apply rounded-[22px] border border-border/80 bg-card/95 p-4;
-  box-shadow: var(--shadow-premium), inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(12px);
+  @apply rounded-lg border border-border bg-card p-4;
 }
 
 .btn-primary {
-  @apply min-h-11 rounded-2xl bg-accent px-4 py-2.5 text-sm font-semibold text-black transition-all duration-300 ease-out hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60;
+  @apply min-h-12 rounded-lg bg-accent px-4 py-3 text-center text-[11px] font-bold uppercase tracking-display text-foreground transition-colors duration-150 ease-out;
+  @apply hover:bg-foreground hover:text-background focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-foreground/50;
+  @apply disabled:cursor-not-allowed disabled:opacity-45;
 }
 
 .btn-secondary {
-  @apply min-h-11 rounded-2xl border border-border/80 bg-surface/90 px-4 py-2.5 text-sm font-semibold transition-all duration-200 ease-out disabled:cursor-not-allowed disabled:opacity-60;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  @apply min-h-12 rounded-lg border border-foreground/35 bg-transparent px-4 py-3 text-center text-[11px] font-bold uppercase tracking-display text-foreground transition-colors duration-150 ease-out;
+  @apply hover:bg-foreground hover:text-background;
+  @apply disabled:cursor-not-allowed disabled:opacity-45;
 }
 
 input,
 select,
 textarea {
-  @apply min-h-11 rounded-2xl border border-border/80 bg-surface/85 px-3 py-2 text-[15px] text-foreground outline-none ring-0 transition placeholder:text-muted focus:border-accent;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  @apply min-h-11 rounded-none border-0 border-b border-muted/40 bg-transparent px-0 py-2.5 text-[15px] leading-snug text-foreground outline-none ring-0 transition;
+  @apply placeholder:text-muted/70 focus:border-foreground;
 }
 
-h1 {
-  @apply tracking-tight;
+@layer base {
+  h1 {
+    @apply text-lg font-bold uppercase tracking-display text-foreground sm:text-xl;
+  }
+
+  h2 {
+    @apply text-base font-bold uppercase tracking-display text-foreground;
+  }
 }
 
 .animate-in {
-  animation: fadeSlideIn 220ms ease-out;
+  animation: fadeSlideIn 200ms ease-out;
 }
 
 @keyframes fadeSlideIn {
@@ -81,7 +124,7 @@ h1 {
 .skeleton {
   position: relative;
   overflow: hidden;
-  background: rgba(154, 164, 178, 0.15);
+  background: rgb(255 255 255 / 0.08);
 }
 
 .skeleton::after {
@@ -89,7 +132,7 @@ h1 {
   position: absolute;
   inset: 0;
   transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.18), transparent);
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.06), transparent);
   animation: shimmer 1.35s infinite;
 }
 
@@ -131,4 +174,41 @@ h1 {
   100% {
     transform: rotate(360deg) scale(1);
   }
+}
+
+/*
+ * Telegram WebView / Safari: автодетект дат и сущностей рисует подчёркивание через встроенный DOM / inline-стиль.
+ * Правило вне @layer — выше слоя Tailwind utilities, чтобы гарантированно перебить WebKit и inline styles.
+ */
+.notification-item-plain,
+.notification-item-plain * {
+  border-bottom-style: none !important;
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
+  -webkit-text-decoration: none !important;
+  text-decoration: none !important;
+  text-decoration-line: none !important;
+  text-decoration-thickness: 0 !important;
+  text-underline-offset: 0 !important;
+}
+
+.notification-item-plain :where(a, u, abbr) {
+  font: inherit;
+  border-bottom-style: none !important;
+  color: inherit !important;
+  outline: none;
+  pointer-events: none;
+  -webkit-box-shadow: none !important;
+  -webkit-text-decoration: none !important;
+  box-shadow: none !important;
+  text-decoration: none !important;
+  text-underline-offset: 0 !important;
+}
+
+.notification-item-plain p.notification-plain-text {
+  background-image: none !important;
+}
+
+.notification-item-plain p.notification-plain-text * {
+  background-image: none !important;
 }

@@ -10,15 +10,31 @@
 
 - Next.js + TypeScript + Tailwind CSS
 - shadcn/ui (базовые UI-компоненты)
-- Prisma ORM + PostgreSQL
+- Prisma ORM (**локально — SQLite**, в проде возможен Postgres)
 - Zod, date-fns, jose, crypto
-- Docker Compose
+- Docker Compose (опционально)
 
 ## Роли
 
 - `SUPER_ADMIN`: полный контроль пользователей, зон, лимитов, логов, токенов.
 - `ADMIN`: управление графиком, сменами, отчетами, лимитами (без управления суперадмином).
 - `EMPLOYEE`: свои смены, старт/завершение, отчеты, просмотр общего графика.
+
+## Локальная разработка (Mac / без Docker)
+
+1. **Установите Node.js 20+** и убедитесь, что в терминале есть `node` и `npm` (`npm -v`).
+   Если команда **`npm run dev`** даёт `command not found: npm`, установите Node (см. сайт или `brew install node`) или подключите [nvm](https://github.com/nvm-sh/nvm): в каталоге проекта есть **`.nvmrc`** (`nvm install && nvm use`).
+2. Скопируйте переменные: `cp .env.example .env` (разумные значения для разработки уже в примере: SQLite, вход без бота).
+3. Установите зависимости: `npm install`
+4. Примените схему к базе и поднимите dev-сервер одной строкой:
+   - **`npm run dev:fresh`**  
+   или  
+   - **`./scripts/dev.sh`**  
+5. Откройте **`http://localhost:3000/telegram/login`** и при необходимости нажмите **«Войти как тестовый пользователь»** (нужно `TELEGRAM_ALLOW_DEV_LOGIN=true` в `.env`, как в `.env.example`).
+
+Без правок после `git pull` иногда нужно только: `npm install && npm run setup:local` и затем **`npm run dev`**.
+
+---
 
 ## Структура проекта
 
@@ -62,7 +78,9 @@
 
 ## Основные команды
 
-- `npm run dev` — разработка
+- `npm run dev:fresh` / `./scripts/dev.sh` — **рекомендуется локально**: Prisma generate + db push + `next dev`
+- `npm run setup:local` — только Prisma generate + db push (без сервера)
+- `npm run dev` — только Next (если база уже настроена)
 - `npm run build` — production build
 - `npm run start` — запуск production
 - `npm run lint` — линтер

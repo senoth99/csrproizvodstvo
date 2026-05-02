@@ -7,13 +7,18 @@ export async function writeAuditLog(params: {
   entityId?: string | null;
   payload?: unknown;
 }) {
-  await prisma.auditLog.create({
-    data: {
-      actorUserId: params.actorUserId ?? null,
-      action: params.action,
-      entityType: params.entityType,
-      entityId: params.entityId ?? null,
-      payload: params.payload ? JSON.stringify(params.payload) : null
-    }
-  });
+  try {
+    await prisma.auditLog.create({
+      data: {
+        actorUserId: params.actorUserId ?? null,
+        action: params.action,
+        entityType: params.entityType,
+        entityId: params.entityId ?? null,
+        payload: params.payload ? JSON.stringify(params.payload) : null
+      }
+    });
+  } catch (e) {
+    /* Не валить server action из‑за вторичной записи в audit (часто 500 после успешной основной операции). */
+    console.error("[writeAuditLog]", params.action, e);
+  }
 }

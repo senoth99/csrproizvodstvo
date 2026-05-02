@@ -1,8 +1,14 @@
+import { ServiceUnavailable } from "@/components/ServiceUnavailable";
 import { requireAuth } from "@/lib/auth";
 import { BRIGADES } from "@/lib/brigades";
 import { BrigadeBoard } from "@/components/BrigadeBoard";
 import { WeekModeSwitch } from "@/components/WeekModeSwitch";
+import { ShiftStatus, UserRole } from "@/lib/enums";
+import { canOpenManagerPanel } from "@/lib/managerPanel";
+import { catchDb } from "@/lib/dbBoundary";
 import { prisma } from "@/lib/prisma";
+import { prismaUserShiftBoardSelect } from "@/lib/prismaSafeUserInclude";
+import { describeShiftBrief } from "@/lib/shiftSwapCore";
 import { getWeekStart } from "@/lib/utils";
 import { addDays } from "date-fns";
 
@@ -13,42 +19,88 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
   const currentWeekStart = getWeekStart(new Date());
   const nextWeekStart = addDays(currentWeekStart, 7);
   const weekStartDate = weekMode === "next" ? nextWeekStart : currentWeekStart;
-  const shifts = await prisma.shift.findMany({
-    where: { weekStartDate },
-    include: { user: true, zone: true },
-    orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }]
+  const canManageSchedule = canOpenManagerPanel(user);
+  const canRequestEmployeeSwap = user.role === UserRole.EMPLOYEE;
+
+  const loaded = await catchDb("schedule", async () => {
+    const [shifts, assignableEmployees, swapRows] = await Promise.all([
+      prisma.shift.findMany({
+        where: { weekStartDate },
+        include: { user: { select: prismaUserShiftBoardSelect }, zone: true },
+        orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }]
+      }),
+      canManageSchedule
+        ? prisma.user.findMany({
+            where: { isActive: true },
+            orderBy: { name: "asc" },
+            select: {
+              id: true,
+              name: true,
+              color: true,
+              telegramPhotoUrl: true
+            }
+          })
+        : Promise.resolve([]),
+      canRequestEmployeeSwap
+        ? prisma.shift.findMany({
+            where: { userId: user.id, weekStartDate, status: ShiftStatus.PLANNED },
+            include: { zone: true },
+            orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }]
+          })
+        : Promise.resolve([])
+    ]);
+    return { shifts, assignableEmployees, swapRows };
   });
-  const allowedKeys = new Set(BRIGADES.map((b) => `${b.zoneName}|${b.startTime}|${b.endTime}`));
-  const boardShifts = shifts
-    .filter((s) => allowedKeys.has(`${s.zone.name}|${s.startTime}|${s.endTime}`))
-    .map((s) => ({
-      id: s.id,
-      userId: s.userId,
-      dayOfWeek: s.dayOfWeek,
-      zoneName: s.zone.name,
-      startTime: s.startTime,
-      endTime: s.endTime,
-      user: {
-        id: s.user.id,
-        name: s.user.name,
-        color: s.user.color,
-        telegramPhotoUrl: s.user.telegramPhotoUrl ?? null
-      }
-    }));
-  return (
-    <div className="space-y-4">
-      <WeekModeSwitch
-        mode={weekMode}
-        currentWeekStartIso={currentWeekStart.toISOString()}
-        nextWeekStartIso={nextWeekStart.toISOString()}
-      />
-      <BrigadeBoard
-        brigades={BRIGADES}
-        shifts={boardShifts}
-        currentUserId={user.id}
-        weekStartDateIso={weekStartDate.toISOString()}
-        weekMode={weekMode}
-      />
-    </div>
-  );
+  if (!loaded.ok) return <ServiceUnavailable scope="schedule" />;
+
+  try {
+    const { shifts, assignableEmployees, swapRows } = loaded.data;
+    const allowedKeys = new Set(BRIGADES.map((b) => `${b.zoneName}|${b.startTime}|${b.endTime}`));
+    const boardShifts = shifts
+      .filter((s) => allowedKeys.has(`${s.zone.name}|${s.startTime}|${s.endTime}`))
+      .map((s) => ({
+        id: s.id,
+        userId: s.userId,
+        dayOfWeek: s.dayOfWeek,
+        zoneName: s.zone.name,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        user: {
+          id: s.user.id,
+          name: s.user.name,
+          color: s.user.color,
+          telegramPhotoUrl: s.user.telegramPhotoUrl ?? null
+        }
+      }));
+    const swapOffers = swapRows.map((s) => ({ id: s.id, summary: describeShiftBrief(s) }));
+
+    return (
+      <div className="space-y-4">
+        <WeekModeSwitch
+          mode={weekMode}
+          currentWeekStartIso={currentWeekStart.toISOString()}
+          nextWeekStartIso={nextWeekStart.toISOString()}
+        />
+        <BrigadeBoard
+          brigades={BRIGADES}
+          shifts={boardShifts}
+          currentUserId={user.id}
+          weekStartDateIso={weekStartDate.toISOString()}
+          weekMode={weekMode}
+          canManageSchedule={canManageSchedule}
+          assignableEmployees={assignableEmployees.map((u) => ({
+            id: u.id,
+            name: u.name,
+            color: u.color,
+            telegramPhotoUrl: u.telegramPhotoUrl ?? null
+          }))}
+          swapOffers={swapOffers}
+          canRequestEmployeeSwap={canRequestEmployeeSwap && !canManageSchedule}
+        />
+      </div>
+    );
+  } catch (e) {
+    console.error("[schedule/page render]", e);
+    return <ServiceUnavailable scope="schedule" />;
+  }
 }

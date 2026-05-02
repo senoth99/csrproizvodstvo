@@ -1,0 +1,16 @@
+.git
+.gitignore
+.next
+node_modules
+.env
+.env.*
+!.env.example
+*.log
+npm-debug.log*
+coverage
+.DS_Store
+.cursor
+*.md
+tsconfig.tsbuildinfo
+prisma/*.db
+prisma/dev.db

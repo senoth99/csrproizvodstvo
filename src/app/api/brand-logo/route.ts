@@ -1,19 +1,12 @@
-import { readFile } from "fs/promises";
 import { NextResponse } from "next/server";
 
-const logoPath =
-  "/Users/senoth/.cursor/projects/Users-senoth-Desktop-production-scheduler/assets/optimize-2d9b4a63-7441-4c15-aace-e2f05059ae5b.png";
-
-export async function GET() {
+/** Старые ссылки /api/brand-logo → статика из public (без fs и абсолютных путей Cursor). */
+export function GET(req: Request) {
   try {
-    const buf = await readFile(logoPath);
-    return new NextResponse(buf, {
-      headers: {
-        "Content-Type": "image/png",
-        "Cache-Control": "public, max-age=3600"
-      }
-    });
-  } catch {
-    return new NextResponse("Logo not found", { status: 404 });
+    const base = new URL(req.url);
+    return NextResponse.redirect(new URL("/brand-logo.png", base.origin), 307);
+  } catch (e) {
+    console.error("[api/brand-logo]", e instanceof Error ? e.message : e);
+    return NextResponse.json({ error: "invalid_request" }, { status: 400 });
   }
 }

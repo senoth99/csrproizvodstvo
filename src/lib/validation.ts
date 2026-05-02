@@ -3,7 +3,7 @@ import { ShiftSource, ShiftStatus, UserRole } from "./enums";
 
 export const userSchema = z.object({
   name: z.string().min(2),
-  role: z.enum([UserRole.SUPER_ADMIN, UserRole.EMPLOYEE]),
+  role: z.enum([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.EMPLOYEE]),
   color: z.string().min(4),
   isActive: z.boolean()
 });

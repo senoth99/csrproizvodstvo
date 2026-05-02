@@ -1,28 +1,15 @@
-version: "3.9"
-
+# Опционально: свой Postgres как на проде. Локально по умолчанию хватит SQLite (см. .env.example).
 services:
-  postgres:
+  db:
     image: postgres:16-alpine
-    container_name: production_scheduler_postgres
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: production_scheduler
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: scheduler
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-
-  app:
-    build: .
-    container_name: production_scheduler_app
-    depends_on:
-      - postgres
-    env_file:
-      - .env
-    ports:
-      - "3000:3000"
-    command: sh -c "npx prisma migrate deploy && npm run start"
 
 volumes:
   pgdata:

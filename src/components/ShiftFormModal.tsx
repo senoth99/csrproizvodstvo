@@ -9,7 +9,9 @@ export function ShiftFormModal({ userId, zones, weekStartDate }: { userId: strin
   return (
     <form
       className="card grid gap-2 md:grid-cols-6"
-      action={(fd) => {
+      onSubmit={(e) => {
+        e.preventDefault();
+        const fd = new FormData(e.currentTarget);
         startTransition(async () => {
           setError("");
           try {
@@ -21,8 +23,8 @@ export function ShiftFormModal({ userId, zones, weekStartDate }: { userId: strin
               startTime: String(fd.get("startTime")),
               endTime: String(fd.get("endTime"))
             });
-          } catch (e) {
-            setError(e instanceof Error ? e.message : "Ошибка создания смены");
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "Ошибка создания смены");
           }
         });
       }}
@@ -32,7 +34,7 @@ export function ShiftFormModal({ userId, zones, weekStartDate }: { userId: strin
       <input name="startTime" type="time" defaultValue="10:00" className="rounded-lg bg-surface p-2" />
       <input name="endTime" type="time" defaultValue="18:00" className="rounded-lg bg-surface p-2" />
       <button disabled={pending} className="btn-primary md:col-span-2">{pending ? "Сохраняем..." : "Поставить смену"}</button>
-      {error && <p className="md:col-span-6 text-sm text-red-400">{error}</p>}
+      {error && <p className="md:col-span-6 text-sm font-medium text-foreground/85">{error}</p>}
     </form>
   );
 }

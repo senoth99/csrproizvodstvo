@@ -17,7 +17,9 @@ model User {
   telegramPhotoUrl String?
   profileCompleted Boolean       @default(false)
   role           String        @default("EMPLOYEE")
+  isManager      Boolean       @default(false)
   isActive       Boolean       @default(true)
+  payoutDebtCents Int          @default(0)
   color          String        @default("#1f8f5f")
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
@@ -29,15 +31,35 @@ model User {
   auditActions   AuditLog[]    @relation("AuditActor")
   createdShifts  Shift[]       @relation("ShiftCreatedBy")
   updatedShifts  Shift[]       @relation("ShiftUpdatedBy")
+  shiftSwapRequestsSubmitted ShiftSwapRequest[] @relation("SwapRequestRequester")
+  appNotifications AppNotification[]
+  acceptedShiftReports ShiftReport[] @relation("ShiftReportAcceptedBy")
 }
 
 model AllowedTelegramUser {
   id        String   @id @default(cuid())
   username  String   @unique
   role      String   @default("EMPLOYEE")
+  isManager Boolean  @default(false)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Браузерный вход: токен в /start или текстом боту
+model TelegramLoginChallenge {
+  id                String   @id @default(cuid())
+  tokenHash         String   @unique
+  expiresAt         DateTime
+  status            String   @default("pending") // pending | ready
+  telegramId        String?
+  telegramUsername  String?
+  telegramFirstName String?
+  telegramLastName  String?
+  telegramPhotoUrl    String?
+  createdAt         DateTime @default(now())
+
+  @@index([expiresAt])
 }
 
 model AccessToken {
@@ -110,9 +132,44 @@ model Shift {
   timeLog       ShiftTimeLog?
   report        ShiftReport?
   chatMessages  ChatMessage[]
+  swapRequestsAsOffer  ShiftSwapRequest[] @relation("SwapOfferShift")
+  swapRequestsAsTarget ShiftSwapRequest[] @relation("SwapTargetShift")
 
   @@index([weekStartDate, dayOfWeek, zoneId])
   @@index([userId, weekStartDate, dayOfWeek])
+}
+
+model ShiftSwapRequest {
+  id                String   @id @default(cuid())
+  requesterUserId   String
+  requesterShiftId  String
+  targetShiftId     String
+  status            String   @default("PENDING")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  requester         User     @relation("SwapRequestRequester", fields: [requesterUserId], references: [id], onDelete: Cascade)
+  requesterShift    Shift    @relation("SwapOfferShift", fields: [requesterShiftId], references: [id], onDelete: Cascade)
+  targetShift       Shift    @relation("SwapTargetShift", fields: [targetShiftId], references: [id], onDelete: Cascade)
+
+  @@index([requesterUserId, status])
+  @@index([targetShiftId, status])
+}
+
+model AppNotification {
+  id             String    @id @default(cuid())
+  userId         String
+  type           String
+  title          String
+  body           String
+  payload        String?
+  swapRequestId  String?
+  readAt         DateTime?
+  createdAt      DateTime  @default(now())
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+  @@index([swapRequestId])
 }
 
 model ShiftTimeLog {
@@ -128,13 +185,19 @@ model ShiftTimeLog {
 }
 
 model ShiftReport {
-  id        String   @id @default(cuid())
-  shiftId   String   @unique
-  userId    String
-  text      String
-  createdAt DateTime @default(now())
-  shift     Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                 String    @id @default(cuid())
+  shiftId            String    @unique
+  userId             String
+  text               String
+  status             String    @default("PENDING_REVIEW")
+  accrualAmountCents Int?
+  acceptedAt         DateTime?
+  acceptedByUserId   String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @default(now()) @updatedAt
+  shift              Shift     @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  acceptedBy         User?     @relation("ShiftReportAcceptedBy", fields: [acceptedByUserId], references: [id])
 }
 
 model AuditLog {

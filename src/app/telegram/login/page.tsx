@@ -1,8 +1,12 @@
 "use client";
 
 import Script from "next/script";
-import { useEffect, useState } from "react";
-import { Send } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { AuthScreenShell } from "@/components/AuthScreenShell";
+import { TelegramBotLinkAuth } from "@/components/TelegramBotLinkAuth";
+import { TelegramDevBypassLogin } from "@/components/TelegramDevBypassLogin";
+import type { AccessDeniedPayload } from "@/lib/accessDenied";
+import { isAccessDeniedResponse } from "@/lib/accessDenied";
 
 declare global {
   interface Window {
@@ -16,19 +20,26 @@ declare global {
   }
 }
 
+const SHOW_DEV_LOGIN = process.env.NEXT_PUBLIC_TELEGRAM_AUTH_DEV === "true";
+
 export default function TelegramLoginPage() {
-  const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [showBrowserFallback, setShowBrowserFallback] = useState(false);
+  const [error, setError] = useState("");
+  const navigateAfterLogin = useCallback((onboardingRequired: boolean) => {
+    window.location.href = onboardingRequired ? "/welcome" : "/schedule";
+  }, []);
 
   useEffect(() => {
-    const login = async () => {
+    const loginMiniApp = async () => {
       try {
         const app = window.Telegram?.WebApp;
         if (!app?.initData) {
-          setError("Откройте приложение из Telegram Mini App.");
+          setShowBrowserFallback(true);
           setLoading(false);
           return;
         }
+
         app.ready();
         app.expand();
 
@@ -37,27 +48,60 @@ export default function TelegramLoginPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ initData: app.initData })
         });
-        const data = (await res.json()) as { onboardingRequired?: boolean; error?: string };
+        const data = (await res.json()) as AccessDeniedPayload & { onboardingRequired?: boolean };
+        if (isAccessDeniedResponse(res.status, data)) {
+          window.location.replace("/access-denied");
+          return;
+        }
         if (!res.ok) throw new Error(data.error ?? "Авторизация через Telegram не удалась");
-        window.location.href = data.onboardingRequired ? "/welcome" : "/schedule";
+        navigateAfterLogin(Boolean(data.onboardingRequired));
       } catch (e) {
         setError(e instanceof Error ? e.message : "Ошибка авторизации");
+        setShowBrowserFallback(true);
       } finally {
         setLoading(false);
       }
     };
-    login();
-  }, []);
+    loginMiniApp();
+  }, [navigateAfterLogin]);
+
+  const subtitle = loading ? (
+    "Подключение к Telegram Mini App… если вы в браузере, ниже появится вход через бота."
+  ) : showBrowserFallback && error ? (
+    "Не получилось войти через Mini App — воспользуйтесь браузерным способом ниже."
+  ) : null;
 
   return (
-    <div className="card mx-auto mt-20 max-w-md space-y-3 text-center">
-      <Script src="https://telegram.org/js/telegram-web-app.js" strategy="beforeInteractive" />
-      <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-600">
-        <Send size={18} />
-      </div>
-      <h1 className="text-xl font-semibold">Вход через Telegram</h1>
-      <p className="text-sm text-muted">{loading ? "Проверяем аккаунт..." : "Выполняется вход в Mini App"}</p>
-      {error && <p className="text-sm text-red-500">{error}</p>}
-    </div>
+    <>
+      {/*
+       * beforeInteractive поддерживается в основном из корневого layout (Server Component).
+       * В клиентской странице на части сборок/next dev это давало Internal Server Error.
+       */}
+      <Script src="https://telegram.org/js/telegram-web-app.js" strategy="afterInteractive" />
+      <AuthScreenShell title="Авторизация через Telegram" description={subtitle || undefined}>
+        {SHOW_DEV_LOGIN ? (
+          <div className="mb-6">
+            <TelegramDevBypassLogin />
+          </div>
+        ) : null}
+        {loading ? (
+          <div className="flex flex-col items-center gap-3 py-2">
+            <div className="flex items-center justify-center gap-1.5 pt-2">
+              <span className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.3s]" />
+              <span className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.15s]" />
+              <span className="h-2 w-2 animate-bounce rounded-full bg-accent" />
+            </div>
+            <p className="text-xs text-muted">Проверяем аккаунт…</p>
+          </div>
+        ) : null}
+
+        {!loading && showBrowserFallback ? (
+          <div className="space-y-4" data-no-swipe="true">
+            {error ? <p className="text-center text-sm font-medium text-foreground/85">{error}</p> : null}
+            <TelegramBotLinkAuth />
+          </div>
+        ) : null}
+      </AuthScreenShell>
+    </>
   );
 }

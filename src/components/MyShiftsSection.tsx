@@ -1,12 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { addDays, isSameDay, parseISO } from "date-fns";
+import { useState } from "react";
+import { addDays, isSameDay } from "date-fns";
 import { CalendarDays, Clock3, History, X, Wrench } from "lucide-react";
-import { EmptyState } from "@/components/EmptyState";
-import { ReportModal } from "@/components/ReportModal";
-import { ShiftStatus } from "@/lib/enums";
-import { formatDateRu, isoFromWeekDay, weekDays } from "@/lib/utils";
+import { CompleteShiftReportDialog } from "@/components/CompleteShiftReportDialog";
+import { ShiftReportStatus, ShiftStatus } from "@/lib/enums";
+import { formatDateRu, isoFromWeekDay, safeParseISO, weekDays } from "@/lib/utils";
 
 type ShiftItem = {
   id: string;
@@ -17,83 +16,150 @@ type ShiftItem = {
   status: string;
   zoneName: string;
   hasReport: boolean;
+  reportStatus: string | null;
 };
 
-export function MyShiftsSection({ weekShifts, allShifts }: { weekShifts: ShiftItem[]; allShifts: ShiftItem[] }) {
+export function MyShiftsSection({
+  weekShifts,
+  allShifts,
+  scheduledInWeekRangeCount
+}: {
+  weekShifts: ShiftItem[];
+  allShifts: ShiftItem[];
+  /** Смен в выбранном диапазоне до фильтра «в архив после отчёта» — для текста пустого списка */
+  scheduledInWeekRangeCount: number;
+}) {
   const [showArchive, setShowArchive] = useState(false);
   const now = new Date();
   const tomorrow = addDays(now, 1);
-  const active = useMemo(
-    () => weekShifts.find((s) => s.status === ShiftStatus.IN_PROGRESS),
-    [weekShifts]
-  );
 
   const renderShiftCard = (s: ShiftItem) => {
-    const shiftDay = isoFromWeekDay(parseISO(s.weekStartDateIso), s.dayOfWeek);
+    const shiftDay = isoFromWeekDay(safeParseISO(s.weekStartDateIso), s.dayOfWeek);
     const isToday = isSameDay(shiftDay, now);
     const isTomorrow = isSameDay(shiftDay, tomorrow);
     const dayBadge = isToday ? "Сегодня" : isTomorrow ? "Завтра" : null;
 
+    const reportPending =
+      s.hasReport && s.reportStatus === ShiftReportStatus.PENDING_REVIEW;
+    const reportAccepted =
+      s.hasReport &&
+      (s.reportStatus === ShiftReportStatus.ACCEPTED ||
+        (s.reportStatus == null)); /* до миграции статуса */
+    const shiftHeadline = `${s.zoneName} · ${weekDays[s.dayOfWeek - 1]?.name ?? ""}, ${formatDateRu(
+      shiftDay,
+      "dd.MM"
+    )} · ${s.startTime}–${s.endTime}`;
+
+    const showCompleteFab =
+      isToday &&
+      s.status !== ShiftStatus.CANCELLED &&
+      !reportPending &&
+      !reportAccepted;
+
     return (
-      <div key={s.id} className="card space-y-2">
+      <div
+        key={s.id}
+        className={`card space-y-2${showCompleteFab ? " relative pb-12 pr-12" : ""}`}
+      >
         <div className="flex items-center justify-between gap-2 text-sm font-semibold">
           <div className="flex items-center gap-2">
-            <CalendarDays size={15} className="text-accent" />
+            <CalendarDays size={16} className="text-muted" aria-hidden />
             {weekDays[s.dayOfWeek - 1]?.name}, {formatDateRu(shiftDay, "dd.MM")}
           </div>
           {dayBadge ? (
             <span
-              className={`inline-flex min-w-[72px] justify-center rounded-md border px-2 py-1 text-[10px] font-medium leading-none ${
-                isToday
-                  ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-300"
-                  : "border-sky-400/40 bg-sky-500/10 text-sky-300"
+              className={`inline-flex min-w-[72px] justify-center rounded-sm border px-2 py-1 text-[9px] font-bold uppercase tracking-display ${
+                isToday ? "border-accent/50 bg-accent text-foreground" : "border-muted/40 bg-transparent text-muted"
               }`}
             >
               {dayBadge}
             </span>
           ) : null}
         </div>
-        <div className="flex items-center gap-2 text-sm">
-          <Wrench size={15} className="text-muted" />
-          {s.zoneName}
+        <div className="flex items-center gap-2 text-sm text-muted">
+          <Wrench size={16} aria-hidden />
+          <span className="text-foreground/90">{s.zoneName}</span>
         </div>
         <div className="flex items-center gap-2 text-sm text-muted">
-          <Clock3 size={15} />
+          <Clock3 size={16} aria-hidden />
           {s.startTime} - {s.endTime}
         </div>
+
+        {isToday && s.status !== ShiftStatus.CANCELLED ? (
+          reportPending ? (
+            <p className="rounded-sm border border-highlight/45 bg-highlight/12 px-3 py-2.5 text-center text-[10px] font-bold uppercase tracking-display text-foreground">
+              Отчёт на проверке
+            </p>
+          ) : reportAccepted ? (
+            <p className="rounded-sm border border-accent/45 bg-accent/15 px-3 py-2.5 text-center text-[10px] font-bold uppercase tracking-display text-foreground">
+              Смена принята
+            </p>
+          ) : (
+            <CompleteShiftReportDialog shiftId={s.id} headline={shiftHeadline} />
+          )
+        ) : null}
       </div>
     );
   };
 
   return (
     <div className="space-y-2 pb-20">
-      <h2 className="text-lg font-semibold">Мои смены</h2>
-      {weekShifts.length === 0 ? <EmptyState text="Установите смены в графике" /> : null}
-      {active && !active.hasReport ? <ReportModal shiftId={active.id} /> : null}
+      <h2 className="text-base font-bold uppercase tracking-display">Мои смены</h2>
+      {weekShifts.length === 0 ? (
+        <div
+          className="flex flex-col items-center justify-center gap-3 rounded-lg bg-background p-4 py-10 text-center"
+          aria-live="polite"
+        >
+          <div className="flex w-full max-w-[200px] items-center gap-3" aria-hidden>
+            <span className="h-px flex-1 bg-gradient-to-r from-transparent via-border to-transparent" />
+            <span className="select-none text-[17px] font-light leading-none tracking-widest text-muted">—</span>
+            <span className="h-px flex-1 bg-gradient-to-l from-transparent via-border to-transparent" />
+          </div>
+          {scheduledInWeekRangeCount === 0 ? (
+            <p className="max-w-[240px] text-[12px] leading-snug text-muted/80">
+              Запланируйте их в разделе «График».
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       {weekShifts.map((s) => renderShiftCard(s))}
 
       <button
-        className="btn-secondary fixed bottom-20 left-1/2 z-40 inline-flex w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 items-center justify-center gap-2 shadow-lg"
+        type="button"
+        className={
+          "btn-secondary fixed bottom-20 inset-x-3 z-[180] mx-auto inline-flex min-h-12 w-auto max-w-md touch-manipulation items-center justify-center gap-2 pointer-events-auto transition-opacity duration-200 " +
+          (showArchive ? "opacity-60" : "")
+        }
         onClick={() => setShowArchive((v) => !v)}
+        aria-expanded={showArchive}
+        aria-controls="shift-archive-popup"
       >
-        <History size={15} />
+        <History size={18} aria-hidden />
         Архив смен
       </button>
 
       {showArchive ? (
-        <div className="fixed inset-0 z-[160] bg-black/55">
-          <div className="flex h-full w-full flex-col bg-card p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Архив смен</h3>
+        <div
+          id="shift-archive-popup"
+          className="fixed inset-0 z-[170] flex items-center justify-center bg-background/85 p-3 backdrop-blur-[2px]"
+          onClick={() => setShowArchive(false)}
+        >
+          <div
+            className="flex max-h-[82vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-border bg-background"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <h3 className="text-sm font-bold uppercase tracking-display">Архив смен</h3>
               <button
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface text-muted transition hover:text-foreground"
+                type="button"
+                className="inline-flex h-9 w-9 touch-manipulation items-center justify-center rounded-lg border border-border bg-background text-muted transition hover:bg-foreground/[0.06] hover:text-foreground"
                 onClick={() => setShowArchive(false)}
                 aria-label="Закрыть архив"
               >
                 <X size={14} />
               </button>
             </div>
-            <div className="flex-1 space-y-2 overflow-y-auto pr-1 pb-24">
+            <div className="space-y-2 overflow-y-auto px-3 py-3 md:px-4 md:py-4">
               {allShifts.length === 0 ? (
                 <div className="card text-sm text-muted">Смен пока нет.</div>
               ) : (

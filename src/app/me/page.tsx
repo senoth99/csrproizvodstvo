@@ -1,67 +1,101 @@
+import Link from "next/link";
 import { addDays } from "date-fns";
+import { ChevronRight } from "lucide-react";
+import { MeProfileCard } from "@/components/MeProfileCard";
 import { MyShiftsSection } from "@/components/MyShiftsSection";
-import { ProfileNameForm } from "@/components/ProfileNameForm";
-import { UserAvatar } from "@/components/UserAvatar";
+import { ServiceUnavailable } from "@/components/ServiceUnavailable";
 import { requireAuth } from "@/lib/auth";
+import { catchDb } from "@/lib/dbBoundary";
+import { ShiftReportStatus } from "@/lib/enums";
 import { prisma } from "@/lib/prisma";
-import { getWeekStart } from "@/lib/utils";
+import { formatMoneyRu, getWeekStart } from "@/lib/utils";
+
+/** После отправки или принятия отчёта смена убирается из основного списка и остаётся в «Архив смен». */
+function shiftInCabinetArchive(row: { hasReport: boolean; reportStatus: string | null }) {
+  if (!row.hasReport) return false;
+  if (row.reportStatus === ShiftReportStatus.PENDING_REVIEW || row.reportStatus === ShiftReportStatus.ACCEPTED) {
+    return true;
+  }
+  return row.reportStatus == null;
+}
 
 export default async function MePage() {
   const user = await requireAuth();
   const weekStart = getWeekStart();
-  const currentWeekEnd = addDays(weekStart, 7);
   const weekEnd = addDays(weekStart, 14);
-  const shifts = await prisma.shift.findMany({
-    where: { userId: user.id, weekStartDate: { gte: weekStart, lt: weekEnd } },
-    include: { zone: true, report: true },
-    orderBy: [{ weekStartDate: "asc" }, { dayOfWeek: "asc" }, { startTime: "asc" }]
+  const loaded = await catchDb("me", async () => {
+    const [shifts, allShifts, balanceRow] = await Promise.all([
+      prisma.shift.findMany({
+        where: { userId: user.id, weekStartDate: { gte: weekStart, lt: weekEnd } },
+        include: { zone: true, report: true },
+        orderBy: [{ weekStartDate: "asc" }, { dayOfWeek: "asc" }, { startTime: "asc" }]
+      }),
+      prisma.shift.findMany({
+        where: { userId: user.id },
+        include: { zone: true, report: true },
+        orderBy: [{ weekStartDate: "desc" }, { dayOfWeek: "desc" }, { startTime: "asc" }]
+      }),
+      prisma.user.findUnique({ where: { id: user.id }, select: { payoutDebtCents: true } })
+    ]);
+    return { shifts, allShifts, payoutDebtCents: balanceRow?.payoutDebtCents ?? 0 };
   });
-  const allShifts = await prisma.shift.findMany({
-    where: { userId: user.id },
-    include: { zone: true, report: true },
-    orderBy: [{ weekStartDate: "desc" }, { dayOfWeek: "desc" }, { startTime: "asc" }]
-  });
-  const hours = shifts
-    .filter((s) => s.weekStartDate >= weekStart && s.weekStartDate < currentWeekEnd)
-    .reduce((acc, s) => acc + (Number(s.endTime.slice(0, 2)) - Number(s.startTime.slice(0, 2))), 0);
-  return (
-    <div className="space-y-4">
-      <div className="card flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <UserAvatar name={user.name} photoUrl={user.telegramPhotoUrl} color={user.color} size="lg" />
+  if (!loaded.ok) return <ServiceUnavailable scope="me" />;
+  const { shifts, allShifts, payoutDebtCents } = loaded.data;
+  try {
+    return (
+      <div className="space-y-4">
+        <MeProfileCard
+          displayName={user.name}
+          telegramUsername={user.telegramUsername ?? "user"}
+          telegramPhotoUrl={user.telegramPhotoUrl}
+          accentColor={user.color}
+          initialFirstName={user.firstName ?? ""}
+          initialLastName={user.lastName ?? ""}
+        />
+        <Link
+          href="/me/balance"
+          className="-mt-2 card flex min-h-[52px] w-full max-w-full touch-manipulation items-center justify-between gap-3 transition-colors hover:bg-foreground/[0.04] active:opacity-90"
+          aria-label="Открыть баланс и историю операций"
+        >
           <div>
-            <h1 className="text-xl font-bold">{user.name}</h1>
-            <p className="text-xs text-muted">@{user.telegramUsername ?? "user"}</p>
+            <p className="ui-section-kicker">Баланс</p>
+            <p className="mt-1 text-2xl font-bold tabular-nums">{formatMoneyRu(payoutDebtCents / 100)}</p>
           </div>
-        </div>
-        <div className="rounded-xl border border-border bg-surface px-3 py-2 text-center">
-          <p className="text-[11px] text-muted">Часы за неделю</p>
-          <p className="text-lg font-bold">{hours}</p>
+          <ChevronRight className="h-6 w-6 shrink-0 text-muted" aria-hidden />
+        </Link>
+        <div className="pt-2">
+          <MyShiftsSection
+            scheduledInWeekRangeCount={shifts.length}
+            weekShifts={shifts
+              .map((s) => ({
+                id: s.id,
+                dayOfWeek: s.dayOfWeek,
+                weekStartDateIso: s.weekStartDate.toISOString(),
+                startTime: s.startTime,
+                endTime: s.endTime,
+                status: s.status,
+                zoneName: s.zone.name,
+                hasReport: Boolean(s.report),
+                reportStatus: s.report?.status ?? null
+              }))
+              .filter((row) => !shiftInCabinetArchive(row))}
+            allShifts={allShifts.map((s) => ({
+              id: s.id,
+              dayOfWeek: s.dayOfWeek,
+              weekStartDateIso: s.weekStartDate.toISOString(),
+              startTime: s.startTime,
+              endTime: s.endTime,
+              status: s.status,
+              zoneName: s.zone.name,
+              hasReport: Boolean(s.report),
+              reportStatus: s.report?.status ?? null
+            }))}
+          />
         </div>
       </div>
-      <ProfileNameForm initialFirstName={user.firstName ?? ""} initialLastName={user.lastName ?? ""} />
-      <MyShiftsSection
-        weekShifts={shifts.map((s) => ({
-          id: s.id,
-          dayOfWeek: s.dayOfWeek,
-          weekStartDateIso: s.weekStartDate.toISOString(),
-          startTime: s.startTime,
-          endTime: s.endTime,
-          status: s.status,
-          zoneName: s.zone.name,
-          hasReport: Boolean(s.report)
-        }))}
-        allShifts={allShifts.map((s) => ({
-          id: s.id,
-          dayOfWeek: s.dayOfWeek,
-          weekStartDateIso: s.weekStartDate.toISOString(),
-          startTime: s.startTime,
-          endTime: s.endTime,
-          status: s.status,
-          zoneName: s.zone.name,
-          hasReport: Boolean(s.report)
-        }))}
-      />
-    </div>
-  );
+    );
+  } catch (e) {
+    console.error("[me/page render]", e);
+    return <ServiceUnavailable scope="me" />;
+  }
 }

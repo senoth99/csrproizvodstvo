@@ -1,15 +1,65 @@
 "use server";
 
-import { addHours, isBefore, parseISO } from "date-fns";
+import { Prisma } from "@prisma/client";
+import { addHours, isBefore, isSameDay, parseISO } from "date-fns";
 import { revalidatePath } from "next/cache";
-import { hashToken, generateRawToken, getCurrentUser, requireAuth, requireRole } from "@/lib/auth";
+import {
+  hashToken,
+  generateRawToken,
+  getCurrentUser,
+  refreshSessionCookieForUserId,
+  requireAuth,
+  requireRole
+} from "@/lib/auth";
 import { BRIGADES } from "@/lib/brigades";
 import { prisma } from "@/lib/prisma";
 import { reportSchema, shiftSchema, updateShiftSchema, userSchema, zoneLimitSchema, zoneSchema } from "@/lib/validation";
+import { resolveAppPublicBaseUrl } from "@/lib/appUrl";
 import { writeAuditLog } from "@/lib/audit";
-import { ShiftSource, ShiftStatus, UserRole } from "@/lib/enums";
+import {
+  AppNotificationType,
+  ShiftReportStatus,
+  ShiftSource,
+  ShiftStatus,
+  ShiftSwapStatus,
+  UserRole
+} from "@/lib/enums";
+import { canOpenManagerPanel } from "@/lib/managerPanel";
+import { insertAppNotification, notifyUserAppAndTelegram } from "@/lib/notifyDispatch";
+import { describeShiftBrief, notifyTelegramIncomingSwap, respondToShiftSwapRequest } from "@/lib/shiftSwapCore";
+import {
+  prismaUserListNameSelect,
+  prismaUserShiftBoardSelect,
+  prismaUserSwapTargetSelect
+} from "@/lib/prismaSafeUserInclude";
 import { isoFromWeekDay } from "@/lib/utils";
 import { z } from "zod";
+
+const managerBrigadeAssignSchema = z.object({
+  brigadeId: z.string(),
+  dayOfWeek: z.number().int().min(1).max(7),
+  weekStartDate: z.string(),
+  userId: z.string()
+});
+
+const shiftSwapCreateSchema = z.object({
+  requesterShiftId: z.string(),
+  targetShiftId: z.string()
+});
+
+const managerRecordPayoutSchema = z.object({
+  userId: z.string().cuid(),
+  amountRub: z.coerce.number().finite().positive("Сумма выплаты должна быть больше нуля")
+});
+
+const acceptShiftReportSchema = z.object({
+  reportId: z.string().cuid(),
+  amountRub: z.coerce.number().finite().positive("Укажите сумму начисления больше нуля")
+});
+
+function userIsReportAdmin(actor: { role: string }) {
+  return actor.role === UserRole.ADMIN || actor.role === UserRole.SUPER_ADMIN;
+}
 
 function toDateTime(weekStartDate: Date, dayOfWeek: number, time: string) {
   const date = isoFromWeekDay(weekStartDate, dayOfWeek);
@@ -34,12 +84,12 @@ async function assertCanEditBy24h(userRole: string, shiftStart: Date) {
   }
 }
 
-async function assertNoOverlap(userId: string, start: Date, end: Date, exceptShiftId?: string) {
+async function assertNoOverlap(userId: string, start: Date, end: Date, exceptShiftIds: string[] = []) {
   const shifts = await prisma.shift.findMany({
     where: {
       userId,
       status: { in: [ShiftStatus.PLANNED, ShiftStatus.IN_PROGRESS, ShiftStatus.COMPLETED] },
-      ...(exceptShiftId ? { NOT: { id: exceptShiftId } } : {})
+      ...(exceptShiftIds.length ? { NOT: { id: { in: exceptShiftIds } } } : {})
     }
   });
   for (const s of shifts) {
@@ -96,8 +146,11 @@ async function ensureBrigadeZones() {
 }
 
 export async function createUser(input: unknown) {
-  const actor = await requireRole([UserRole.SUPER_ADMIN]);
+  const actor = await requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]);
   const data = userSchema.parse(input);
+  if (data.role === UserRole.SUPER_ADMIN && actor.role !== UserRole.SUPER_ADMIN) {
+    throw new Error("Только суперадмин может создать пользователя с ролью SUPER_ADMIN.");
+  }
   if (data.role === UserRole.SUPER_ADMIN) {
     const existingSuperAdmin = await prisma.user.findFirst({ where: { role: UserRole.SUPER_ADMIN } });
     if (existingSuperAdmin) throw new Error("Суперадмин может быть только один.");
@@ -109,7 +162,17 @@ export async function createUser(input: unknown) {
 
 export async function updateUser(id: string, input: unknown) {
   const actor = await requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]);
+  const target = await prisma.user.findUnique({ where: { id } });
+  if (!target) throw new Error("Пользователь не найден.");
   const data = userSchema.partial().parse(input);
+  if (actor.role !== UserRole.SUPER_ADMIN) {
+    if (target.role === UserRole.SUPER_ADMIN) {
+      throw new Error("Изменять суперадмина может только суперадмин.");
+    }
+    if (data.role === UserRole.SUPER_ADMIN) {
+      throw new Error("Назначать роль SUPER_ADMIN может только суперадмин.");
+    }
+  }
   if (data.role === UserRole.SUPER_ADMIN) {
     const existingSuperAdmin = await prisma.user.findFirst({
       where: { role: UserRole.SUPER_ADMIN, id: { not: id } }
@@ -128,7 +191,7 @@ export async function generateAccessToken(userId: string) {
   const tokenHash = hashToken(raw);
   await prisma.accessToken.create({ data: { userId, tokenHash } });
   await writeAuditLog({ actorUserId: actor.id, action: "ISSUE_ACCESS_TOKEN", entityType: "AccessToken", entityId: userId });
-  return `${process.env.APP_URL ?? "http://localhost:3000"}/login/token/${raw}`;
+  return `${resolveAppPublicBaseUrl()}/login/token/${raw}`;
 }
 
 export async function revokeAccessToken(id: string) {
@@ -235,6 +298,354 @@ export async function toggleBrigadeAssignment(input: { brigadeId: string; dayOfW
   revalidatePath("/me");
 }
 
+/** Назначение смены сотруднику с графика: суперадмин или руководитель (флаг isManager). */
+export async function managerAssignBrigadeShift(input: unknown) {
+  const actor = await requireAuth();
+  if (!canOpenManagerPanel(actor)) throw new Error("Недостаточно прав.");
+  const data = managerBrigadeAssignSchema.parse(input);
+  const brigade = BRIGADES.find((b) => b.id === data.brigadeId);
+  if (!brigade) throw new Error("Бригада не найдена");
+  const weekStartDate = parseISO(data.weekStartDate);
+  const zones = await ensureBrigadeZones();
+  const zone = zones.get(brigade.zoneName);
+  if (!zone) throw new Error("Зона не найдена");
+
+  const target = await prisma.user.findUnique({ where: { id: data.userId } });
+  if (!target?.isActive) throw new Error("Пользователь не найден или не активен.");
+
+  const existingSameCell = await prisma.shift.findFirst({
+    where: {
+      userId: data.userId,
+      zoneId: zone.id,
+      weekStartDate,
+      dayOfWeek: data.dayOfWeek,
+      startTime: brigade.startTime,
+      endTime: brigade.endTime,
+      status: { not: ShiftStatus.CANCELLED }
+    }
+  });
+  if (existingSameCell) return;
+
+  await prisma.shift.deleteMany({
+    where: {
+      userId: data.userId,
+      weekStartDate,
+      dayOfWeek: data.dayOfWeek
+    }
+  });
+
+  const start = toDateTime(weekStartDate, data.dayOfWeek, brigade.startTime);
+  const end = endAt(start, brigade.startTime, brigade.endTime);
+  await assertNoOverlap(data.userId, start, end);
+  await assertZoneLimit(zone.id, data.dayOfWeek, brigade.startTime, brigade.endTime, weekStartDate, true);
+
+  const shift = await prisma.shift.create({
+    data: {
+      userId: data.userId,
+      zoneId: zone.id,
+      weekStartDate,
+      dayOfWeek: data.dayOfWeek,
+      startTime: brigade.startTime,
+      endTime: brigade.endTime,
+      source: ShiftSource.ADMIN,
+      createdById: actor.id,
+      updatedById: actor.id
+    }
+  });
+  await writeAuditLog({
+    actorUserId: actor.id,
+    action: "MANAGER_ASSIGN_BRIGADE",
+    entityType: "Shift",
+    entityId: shift.id,
+    payload: { ...data }
+  });
+
+  try {
+    const created = await prisma.shift.findUnique({ where: { id: shift.id }, include: { zone: true } });
+    if (created?.zone) {
+      const brief = describeShiftBrief(created);
+      const self = target.id === actor.id;
+      await notifyUserAppAndTelegram({
+        userId: target.id,
+        type: AppNotificationType.SHIFT_ASSIGNED_BY_MANAGER,
+        title: self ? "Вы назначили себе смену" : "Вам назначили смену",
+        body: self ? `Вы записали себя в график: ${brief}.` : `${actor.name} записал вас в график: ${brief}.`,
+        payload: { shiftId: shift.id, selfAssigned: self },
+        telegramText: self
+          ? `📅 Вы назначили себе смену:\n${brief}`
+          : `📅 Вам назначили смену (${actor.name}):\n${brief}`
+      });
+    }
+  } catch (e) {
+    console.error("[managerAssignBrigadeShift] уведомление не отправлено, смена уже создана:", e);
+  }
+
+  revalidatePath("/schedule");
+  revalidatePath("/me");
+  revalidatePath("/");
+}
+
+export async function managerRemoveShift(shiftId: string) {
+  const actor = await requireAuth();
+  if (!canOpenManagerPanel(actor)) throw new Error("Недостаточно прав.");
+  const shift = await prisma.shift.findUnique({
+    where: { id: shiftId },
+    include: { zone: true }
+  });
+  if (!shift) throw new Error("Смена не найдена.");
+  if (shift.status === ShiftStatus.CANCELLED) return;
+
+  const brief = describeShiftBrief(shift);
+
+  await prisma.shift.delete({ where: { id: shiftId } });
+  await writeAuditLog({
+    actorUserId: actor.id,
+    action: "MANAGER_REMOVE_SHIFT",
+    entityType: "Shift",
+    entityId: shiftId,
+    payload: { userId: shift.userId }
+  });
+
+  if (shift.userId !== actor.id) {
+    try {
+      await notifyUserAppAndTelegram({
+        userId: shift.userId,
+        type: AppNotificationType.SHIFT_REMOVED_BY_MANAGER,
+        title: "С вас сняли смену",
+        body: `${actor.name} удалил вашу запись из графика: ${brief}.`,
+        payload: { shiftId }
+      });
+    } catch (e) {
+      console.error("[managerRemoveShift] уведомление не отправлено, запись уже удалена:", e);
+    }
+  }
+
+  revalidatePath("/schedule");
+  revalidatePath("/me");
+  revalidatePath("/");
+}
+
+export async function managerRecordPayout(input: unknown) {
+  const actor = await requireAuth();
+  if (!canOpenManagerPanel(actor)) throw new Error("Недостаточно прав.");
+
+  const data = managerRecordPayoutSchema.parse(input);
+  const amountCents = Math.round(data.amountRub * 100);
+  if (amountCents <= 0) throw new Error("Некорректная сумма выплаты.");
+
+  let updated: { prevDebtCents: number; nextDebtCents: number };
+  try {
+    updated = await prisma.$transaction(async (tx) => {
+      const target = await tx.user.findUnique({
+        where: { id: data.userId },
+        select: { id: true, role: true, payoutDebtCents: true }
+      });
+      if (!target || target.role !== UserRole.EMPLOYEE) throw new Error("Сотрудник не найден.");
+
+      const nextDebtCents = Math.max(0, target.payoutDebtCents - amountCents);
+      await tx.user.update({
+        where: { id: data.userId },
+        data: { payoutDebtCents: nextDebtCents }
+      });
+      return { prevDebtCents: target.payoutDebtCents, nextDebtCents };
+    });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2022") {
+      throw new Error("Схема базы без поля выплат. Выполните на сервере: npx prisma db push и перезапустите приложение.");
+    }
+    throw e instanceof Error ? e : new Error("Не удалось записать выплату.");
+  }
+
+  await writeAuditLog({
+    actorUserId: actor.id,
+    action: "MANAGER_RECORD_PAYOUT",
+    entityType: "User",
+    entityId: data.userId,
+    payload: {
+      amountRub: data.amountRub,
+      prevDebtCents: updated.prevDebtCents,
+      nextDebtCents: updated.nextDebtCents
+    }
+  });
+
+  revalidatePath("/manager");
+  revalidatePath("/manager/payouts");
+  revalidatePath("/manager/employees");
+  revalidatePath("/me");
+  revalidatePath("/me/balance");
+}
+
+export async function managerRecordAccrual(input: unknown) {
+  const actor = await requireAuth();
+  if (!canOpenManagerPanel(actor)) throw new Error("Недостаточно прав.");
+
+  const data = managerRecordPayoutSchema.parse(input);
+  const amountCents = Math.round(data.amountRub * 100);
+  if (amountCents <= 0) throw new Error("Некорректная сумма начисления.");
+
+  let updated: { prevDebtCents: number; nextDebtCents: number };
+  try {
+    updated = await prisma.$transaction(async (tx) => {
+      const target = await tx.user.findUnique({
+        where: { id: data.userId },
+        select: { id: true, role: true, payoutDebtCents: true }
+      });
+      if (!target || target.role !== UserRole.EMPLOYEE) throw new Error("Сотрудник не найден.");
+
+      const nextDebtCents = target.payoutDebtCents + amountCents;
+      await tx.user.update({
+        where: { id: data.userId },
+        data: { payoutDebtCents: nextDebtCents }
+      });
+      return { prevDebtCents: target.payoutDebtCents, nextDebtCents };
+    });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2022") {
+      throw new Error("Схема базы без поля выплат. Выполните на сервере: npx prisma db push и перезапустите приложение.");
+    }
+    throw e instanceof Error ? e : new Error("Не удалось записать начисление.");
+  }
+
+  await writeAuditLog({
+    actorUserId: actor.id,
+    action: "MANAGER_RECORD_ACCRUAL",
+    entityType: "User",
+    entityId: data.userId,
+    payload: {
+      amountRub: data.amountRub,
+      prevDebtCents: updated.prevDebtCents,
+      nextDebtCents: updated.nextDebtCents
+    }
+  });
+
+  revalidatePath("/manager");
+  revalidatePath("/manager/payouts");
+  revalidatePath("/manager/employees");
+  revalidatePath("/me");
+  revalidatePath("/me/balance");
+}
+
+export async function createShiftSwapRequest(input: unknown) {
+  const actor = await requireAuth();
+  if (actor.role !== UserRole.EMPLOYEE) {
+    throw new Error("Обмен через график доступен только сотрудникам.");
+  }
+
+  const data = shiftSwapCreateSchema.parse(input);
+  if (data.requesterShiftId === data.targetShiftId) throw new Error("Выберите разные записи.");
+
+  const offer = await prisma.shift.findUnique({
+    where: { id: data.requesterShiftId },
+    include: { zone: true, report: true, timeLog: true }
+  });
+  const target = await prisma.shift.findUnique({
+    where: { id: data.targetShiftId },
+    include: {
+      zone: true,
+      report: true,
+      timeLog: true,
+      user: { select: prismaUserSwapTargetSelect }
+    }
+  });
+
+  if (!offer || !target) throw new Error("Смена не найдена.");
+  if (offer.userId !== actor.id) throw new Error("В обмен можно предложить только свою смену.");
+  if (target.userId === actor.id) throw new Error("Нельзя запросить обмен самому себе.");
+
+  if (offer.status !== ShiftStatus.PLANNED || target.status !== ShiftStatus.PLANNED) {
+    throw new Error("Обмен возможен только для запланированных смен.");
+  }
+  if (offer.report || target.report || offer.timeLog?.startedAt || target.timeLog?.startedAt) {
+    throw new Error("Обмен недоступен: смена уже с отчётом или активным учётом времени.");
+  }
+
+  if (offer.weekStartDate.getTime() !== target.weekStartDate.getTime()) {
+    throw new Error("Обмен только внутри одной недели.");
+  }
+
+  const offerStart = toDateTime(offer.weekStartDate, offer.dayOfWeek, offer.startTime);
+  await assertCanEditBy24h(actor.role, offerStart);
+
+  const conflicting = await prisma.shiftSwapRequest.findFirst({
+    where: {
+      targetShiftId: data.targetShiftId,
+      status: ShiftSwapStatus.PENDING
+    }
+  });
+  if (conflicting) throw new Error("По этой смене уже есть ожидающий запрос. Попробуйте позже.");
+
+  const dup = await prisma.shiftSwapRequest.findFirst({
+    where: {
+      status: ShiftSwapStatus.PENDING,
+      requesterUserId: actor.id,
+      targetShiftId: data.targetShiftId,
+      requesterShiftId: data.requesterShiftId
+    }
+  });
+  if (dup) throw new Error("Такой запрос уже отправлен.");
+
+  const row = await prisma.shiftSwapRequest.create({
+    data: {
+      requesterUserId: actor.id,
+      requesterShiftId: data.requesterShiftId,
+      targetShiftId: data.targetShiftId,
+      status: ShiftSwapStatus.PENDING
+    }
+  });
+
+  const offerBrief = describeShiftBrief(offer);
+  const targetBrief = describeShiftBrief(target);
+
+  await insertAppNotification({
+    userId: target.userId,
+    type: AppNotificationType.SHIFT_SWAP_INCOMING,
+    title: "Запрос на обмен сменами",
+    body: `${actor.name} хочет обменять: вы отдаёте (${targetBrief}), забираете (${offerBrief}).`,
+    swapRequestId: row.id,
+    payload: { swapRequestId: row.id, kind: "incoming" }
+  });
+
+  await notifyTelegramIncomingSwap({
+    responderTelegramId: target.user.telegramId,
+    requestId: row.id,
+    requesterName: actor.name,
+    offerLabel: offerBrief,
+    targetLabel: targetBrief
+  });
+
+  await writeAuditLog({
+    actorUserId: actor.id,
+    action: "SHIFT_SWAP_REQUEST",
+    entityType: "ShiftSwapRequest",
+    entityId: row.id,
+    payload: data
+  });
+  revalidatePath("/schedule");
+  revalidatePath("/");
+}
+
+export type RespondShiftSwapResult = { ok: true } | { ok: false; message: string };
+
+export async function respondShiftSwapRequestAction(input: unknown): Promise<RespondShiftSwapResult> {
+  const actor = await requireAuth();
+  const parsed = z
+    .object({
+      swapRequestId: z.string(),
+      accept: z.boolean()
+    })
+    .safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: "Некорректные данные запроса." };
+  }
+  const result = await respondToShiftSwapRequest(
+    parsed.data.swapRequestId,
+    parsed.data.accept,
+    actor.id
+  );
+  if (!result.ok) return { ok: false, message: result.message };
+  return { ok: true };
+}
+
 export async function updateShift(input: unknown, forceOverride = false) {
   const actor = await requireAuth();
   const parsed = updateShiftSchema.parse(input);
@@ -249,7 +660,7 @@ export async function updateShift(input: unknown, forceOverride = false) {
   const end = endAt(start, startTime, endTime);
   await assertCanEditBy24h(actor.role, start);
   await assertSingleShiftPerDay(current.userId, weekStartDate, dayOfWeek, current.id);
-  await assertNoOverlap(current.userId, start, end, current.id);
+  await assertNoOverlap(current.userId, start, end, [current.id]);
   const isAdmin = actor.role === UserRole.ADMIN || actor.role === UserRole.SUPER_ADMIN;
   await assertZoneLimit(zoneId, dayOfWeek, startTime, endTime, weekStartDate, isAdmin && forceOverride);
   await prisma.shift.update({ where: { id: current.id }, data: { ...parsed, updatedById: actor.id } });
@@ -304,15 +715,134 @@ export async function endShift(shiftId: string) {
 export async function submitShiftReport(input: unknown) {
   const user = await requireAuth();
   const data = reportSchema.parse(input);
-  const shift = await prisma.shift.findUniqueOrThrow({ where: { id: data.shiftId } });
-  if (shift.userId !== user.id) throw new Error("Можно отправлять отчет только по своей смене.");
-  await prisma.shiftReport.upsert({
-    where: { shiftId: data.shiftId },
-    create: { shiftId: data.shiftId, userId: user.id, text: data.text },
-    update: { text: data.text }
+  const shift = await prisma.shift.findUniqueOrThrow({
+    where: { id: data.shiftId },
+    include: { report: true }
   });
-  await writeAuditLog({ actorUserId: user.id, action: "SUBMIT_SHIFT_REPORT", entityType: "ShiftReport", entityId: shift.id });
+  if (shift.userId !== user.id) throw new Error("Можно отправлять отчет только по своей смене.");
+  if (shift.status === ShiftStatus.CANCELLED) throw new Error("Смена отменена, отчёт недоступен.");
+  const shiftDay = isoFromWeekDay(shift.weekStartDate, shift.dayOfWeek);
+  if (!isSameDay(shiftDay, new Date())) throw new Error("Отчёт можно отправить только в день смены.");
+  if (shift.report?.status === ShiftReportStatus.ACCEPTED) throw new Error("Отчёт уже принят.");
+
+  const { reportIdForPath } = await prisma.$transaction(async (tx) => {
+    // Только поля, которые есть у любого Prisma Client: без status/updatedAt — иначе «Unknown argument»
+    // на старых клиентах; updatedAt подставляет БД (@default + @updatedAt в schema).
+    const rep = await tx.shiftReport.upsert({
+      where: { shiftId: data.shiftId },
+      create: {
+        shiftId: data.shiftId,
+        userId: user.id,
+        text: data.text.trim()
+      },
+      update: {
+        text: data.text.trim()
+      }
+    });
+
+    await tx.shift.update({
+      where: { id: data.shiftId },
+      data: { status: ShiftStatus.COMPLETED, updatedById: user.id }
+    });
+    await tx.shiftTimeLog.upsert({
+      where: { shiftId: data.shiftId },
+      create: { shiftId: data.shiftId, userId: user.id, endedAt: new Date() },
+      update: { endedAt: new Date() }
+    });
+    return { reportIdForPath: rep.id };
+  });
+
+  await writeAuditLog({
+    actorUserId: user.id,
+    action: "SUBMIT_SHIFT_REPORT",
+    entityType: "ShiftReport",
+    entityId: shift.id,
+    payload: { reportId: reportIdForPath }
+  });
   revalidatePath("/reports");
+  revalidatePath(`/reports/${reportIdForPath}`);
+  revalidatePath("/me");
+  revalidatePath("/schedule");
+}
+
+export async function acceptShiftReportWithAccrual(input: unknown) {
+  const actor = await requireAuth();
+  if (!userIsReportAdmin(actor)) throw new Error("Только администратор может принять отчёт.");
+
+  const data = acceptShiftReportSchema.parse(input);
+  const amountCents = Math.round(data.amountRub * 100);
+  if (amountCents <= 0) throw new Error("Некорректная сумма.");
+
+  const ledger = await prisma.$transaction(async (tx) => {
+    const report = await tx.shiftReport.findUnique({
+      where: { id: data.reportId },
+      include: { shift: { select: { id: true } } }
+    });
+    if (!report) throw new Error("Отчёт не найден.");
+    if (report.status !== ShiftReportStatus.PENDING_REVIEW) throw new Error("Отчёт уже обработан.");
+
+    const target = await tx.user.findUnique({
+      where: { id: report.userId },
+      select: { id: true, payoutDebtCents: true, isActive: true }
+    });
+    if (!target || !target.isActive) {
+      throw new Error("Пользователь не найден или отключён — начисление по отчёту невозможно.");
+    }
+
+    const nextDebtCents = target.payoutDebtCents + amountCents;
+
+    await tx.user.update({
+      where: { id: report.userId },
+      data: { payoutDebtCents: nextDebtCents }
+    });
+    await tx.shiftReport.update({
+      where: { id: report.id },
+      data: {
+        status: ShiftReportStatus.ACCEPTED,
+        accrualAmountCents: amountCents,
+        acceptedAt: new Date(),
+        acceptedByUserId: actor.id
+      }
+    });
+
+    return {
+      userId: report.userId,
+      reportId: report.id,
+      shiftId: report.shift.id,
+      prevDebtCents: target.payoutDebtCents,
+      nextDebtCents
+    };
+  });
+
+  await writeAuditLog({
+    actorUserId: actor.id,
+    action: "MANAGER_RECORD_ACCRUAL",
+    entityType: "User",
+    entityId: ledger.userId,
+    payload: {
+      amountRub: data.amountRub,
+      prevDebtCents: ledger.prevDebtCents,
+      nextDebtCents: ledger.nextDebtCents,
+      shiftReportId: ledger.reportId,
+      shiftId: ledger.shiftId
+    }
+  });
+  await writeAuditLog({
+    actorUserId: actor.id,
+    action: "ACCEPT_SHIFT_REPORT",
+    entityType: "ShiftReport",
+    entityId: ledger.reportId,
+    payload: { amountRub: data.amountRub, userId: ledger.userId }
+  });
+
+  revalidatePath("/reports");
+  revalidatePath(`/reports/${data.reportId}`);
+  revalidatePath("/me");
+  revalidatePath("/me/balance");
+  revalidatePath("/schedule");
+  revalidatePath("/manager");
+  revalidatePath("/manager/payouts");
+  revalidatePath("/manager/employees");
 }
 
 export async function getWeekSchedule(weekStartDateIso?: string) {
@@ -320,17 +850,39 @@ export async function getWeekSchedule(weekStartDateIso?: string) {
   const weekStartDate = weekStartDateIso ? parseISO(weekStartDateIso) : new Date();
   return prisma.shift.findMany({
     where: { weekStartDate },
-    include: { user: true, zone: true, report: true },
+    include: { user: { select: prismaUserShiftBoardSelect }, zone: true, report: true },
     orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }]
   });
 }
 
 export async function getReports() {
-  await requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]);
+  const user = await requireAuth();
+  const isAdmin = userIsReportAdmin(user);
   return prisma.shiftReport.findMany({
-    include: { user: true, shift: { include: { zone: true } } },
+    where: isAdmin ? undefined : { userId: user.id },
+    include: {
+      user: { select: prismaUserListNameSelect },
+      shift: { include: { zone: true } },
+      acceptedBy: { select: prismaUserListNameSelect }
+    },
     orderBy: { createdAt: "desc" }
   });
+}
+
+export async function getReportById(reportId: string) {
+  const user = await requireAuth();
+  const report = await prisma.shiftReport.findUnique({
+    where: { id: reportId },
+    include: {
+      user: { select: prismaUserListNameSelect },
+      shift: { include: { zone: true } },
+      acceptedBy: { select: prismaUserListNameSelect }
+    }
+  });
+  if (!report) return null;
+  const isAdmin = userIsReportAdmin(user);
+  if (!isAdmin && report.userId !== user.id) return null;
+  return report;
 }
 
 export async function updateMyProfile(input: unknown) {
@@ -350,6 +902,7 @@ export async function updateMyProfile(input: unknown) {
       profileCompleted: true
     }
   });
+  await refreshSessionCookieForUserId(user.id);
   revalidatePath("/me");
 }
 
@@ -371,6 +924,7 @@ export async function completeWelcomeProfile(input: unknown) {
       profileCompleted: true
     }
   });
+  await refreshSessionCookieForUserId(user.id);
   revalidatePath("/welcome");
   revalidatePath("/schedule");
   revalidatePath("/me");
@@ -385,10 +939,12 @@ export async function addAllowedTelegramUser(input: unknown) {
       .min(3, "username слишком короткий")
       .toLowerCase()
       .transform((v) => v.replace(/^@/, "")),
+    isManager: z.boolean().optional().default(false)
   });
   const data = schema.parse(input);
   const superAdminUsername = (process.env.TELEGRAM_ADMIN_USERNAME ?? "").trim().toLowerCase().replace(/^@/, "");
   const role = data.username === superAdminUsername ? UserRole.SUPER_ADMIN : UserRole.EMPLOYEE;
+  const managerFlag = role === UserRole.SUPER_ADMIN ? false : Boolean(data.isManager);
   if (role === UserRole.SUPER_ADMIN) {
     const existingSuperAdmin = await prisma.allowedTelegramUser.findFirst({
       where: { role: UserRole.SUPER_ADMIN, username: { not: data.username } }
@@ -397,17 +953,58 @@ export async function addAllowedTelegramUser(input: unknown) {
   }
   const row = await prisma.allowedTelegramUser.upsert({
     where: { username: data.username },
-    update: { role, isActive: true },
-    create: { username: data.username, role, isActive: true }
+    update: { role, isActive: true, isManager: managerFlag },
+    create: { username: data.username, role, isActive: true, isManager: managerFlag }
+  });
+  await prisma.user.updateMany({
+    where: { telegramUsername: data.username },
+    data: { isManager: managerFlag }
   });
   await writeAuditLog({
     actorUserId: actor.id,
     action: "ALLOW_TELEGRAM_USER",
     entityType: "AllowedTelegramUser",
     entityId: row.id,
-    payload: { ...data, role }
+    payload: { ...data, role, isManager: managerFlag }
   });
   revalidatePath("/admin/access");
+  revalidatePath("/manager");
+}
+
+export async function adminSetTelegramUserManager(input: unknown) {
+  const actor = await requireRole([UserRole.SUPER_ADMIN]);
+  const schema = z.object({
+    username: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .transform((v) => v.replace(/^@/, "")),
+    isManager: z.boolean()
+  });
+  const data = schema.parse(input);
+  const superAdminUsername = (process.env.TELEGRAM_ADMIN_USERNAME ?? "").trim().toLowerCase().replace(/^@/, "");
+  if (data.username === superAdminUsername) throw new Error("Флаг не нужен для суперадмина.");
+  const allow = await prisma.allowedTelegramUser.findFirst({
+    where: { username: data.username }
+  });
+  if (!allow) throw new Error("Запись доступа для этого username не найдена — добавьте пользователя снова.");
+  await prisma.allowedTelegramUser.updateMany({
+    where: { username: data.username },
+    data: { isManager: data.isManager }
+  });
+  await prisma.user.updateMany({
+    where: { telegramUsername: data.username },
+    data: { isManager: data.isManager }
+  });
+  await writeAuditLog({
+    actorUserId: actor.id,
+    action: data.isManager ? "SET_MANAGER" : "UNSET_MANAGER",
+    entityType: "AllowedTelegramUser",
+    entityId: data.username,
+    payload: data
+  });
+  revalidatePath("/admin/access");
+  revalidatePath("/manager");
 }
 
 export async function toggleAllowedTelegramUser(id: string, active: boolean) {

@@ -30,7 +30,16 @@ async function main() {
   ] as const;
   const users = [];
   for (const [name, role] of usersData) {
-    users.push(await prisma.user.create({ data: { name, role, color: "#1f8f5f" } }));
+    users.push(
+      await prisma.user.create({
+        data: {
+          name,
+          role,
+          color: "#1f8f5f",
+          payoutDebtCents: role === UserRole.EMPLOYEE ? 150000 + Math.floor(Math.random() * 450000) : 0
+        }
+      })
+    );
   }
   const zones = await Promise.all([
     prisma.zone.create({ data: { name: "Термопресс", sortOrder: 1 } }),

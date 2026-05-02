@@ -1,10 +1,6 @@
-import { createHmac, createHash } from "crypto";
+import { createHmac } from "crypto";
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { UserRole } from "@/lib/enums";
-import { signSessionToken } from "@/lib/auth";
-
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
+import { createSessionResponseFromTgUser, type TgMiniAppUser } from "@/lib/telegramSignIn";
 
 function parseInitData(initData: string) {
   const params = new URLSearchParams(initData);
@@ -22,18 +18,35 @@ function parseInitData(initData: string) {
 function verifyInitData(initData: string, botToken: string) {
   const parsed = parseInitData(initData);
   if (!parsed) return false;
-  const secret = createHash("sha256").update(botToken).digest();
+  const secret = createHmac("sha256", "WebAppData").update(botToken).digest();
   const signature = createHmac("sha256", secret).update(parsed.dataCheckString).digest("hex");
   return signature === parsed.hash;
 }
 
 export async function POST(req: Request) {
   try {
-    const { initData } = (await req.json()) as { initData?: string };
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
+    const initData =
+      body && typeof body === "object" && "initData" in body && typeof (body as { initData: unknown }).initData === "string"
+        ? (body as { initData: string }).initData
+        : undefined;
     if (!initData) return NextResponse.json({ error: "initData required" }, { status: 400 });
 
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
-    if (!botToken) return NextResponse.json({ error: "TELEGRAM_BOT_TOKEN is missing" }, { status: 500 });
+    const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
+    if (!botToken) {
+      return NextResponse.json(
+        {
+          error:
+            "Не задан TELEGRAM_BOT_TOKEN в .env. Для Mini App входа нужен токен бота; локально можно TELEGRAM_ALLOW_DEV_LOGIN=true и вход с кнопки dev на /telegram/login."
+        },
+        { status: 503 }
+      );
+    }
     if (!verifyInitData(initData, botToken)) return NextResponse.json({ error: "Invalid Telegram signature" }, { status: 401 });
 
     const parsed = parseInitData(initData);
@@ -41,59 +54,21 @@ export async function POST(req: Request) {
     const userRaw = parsed.params.get("user");
     if (!userRaw) return NextResponse.json({ error: "Telegram user not found" }, { status: 400 });
 
-    const tgUser = JSON.parse(userRaw) as {
-      id: number;
-      username?: string;
-      first_name?: string;
-      last_name?: string;
-      photo_url?: string;
-    };
-    const adminUsername = (process.env.TELEGRAM_ADMIN_USERNAME ?? "contact_voropaev").replace("@", "").toLowerCase();
-    const normalizedUsername = (tgUser.username ?? "").toLowerCase();
-    const allowed = await prisma.allowedTelegramUser.findFirst({
-      where: { username: normalizedUsername, isActive: true }
-    });
-    const fallbackAdminAllowed = normalizedUsername === adminUsername;
-    if (!allowed && !fallbackAdminAllowed) {
-      return NextResponse.json({ error: "Доступ не выдан. Обратитесь к администратору." }, { status: 403 });
+    let tgUser: TgMiniAppUser;
+    try {
+      tgUser = JSON.parse(userRaw) as TgMiniAppUser;
+    } catch {
+      return NextResponse.json({ error: "Malformed Telegram user field" }, { status: 400 });
     }
-    const role =
-      (allowed?.role as "SUPER_ADMIN" | "ADMIN" | "EMPLOYEE" | null) ??
-      (fallbackAdminAllowed ? UserRole.SUPER_ADMIN : UserRole.EMPLOYEE);
-    const displayName = [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ").trim() || `tg_${tgUser.id}`;
-
-    const user = await prisma.user.upsert({
-      where: { telegramId: String(tgUser.id) },
-      update: {
-        telegramUsername: tgUser.username ?? null,
-        telegramPhotoUrl: tgUser.photo_url ?? null,
-        isActive: true,
-        role
-      },
-      create: {
-        telegramId: String(tgUser.id),
-        telegramUsername: tgUser.username ?? null,
-        telegramPhotoUrl: tgUser.photo_url ?? null,
-        firstName: tgUser.first_name ?? null,
-        lastName: tgUser.last_name ?? null,
-        name: displayName,
-        role,
-        isActive: true,
-        profileCompleted: false
-      }
-    });
-
-    const jwt = await signSessionToken({ userId: user.id, role: user.role as "SUPER_ADMIN" | "ADMIN" | "EMPLOYEE" });
-    const res = NextResponse.json({ ok: true, role: user.role, onboardingRequired: !user.profileCompleted });
-    res.cookies.set("ps_session", jwt, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: SESSION_TTL_SECONDS
-    });
-    return res;
-  } catch {
-    return NextResponse.json({ error: "Telegram auth failed" }, { status: 500 });
+    if (typeof tgUser?.id !== "number" || !Number.isFinite(tgUser.id)) {
+      return NextResponse.json({ error: "Invalid Telegram user id" }, { status: 400 });
+    }
+    return await createSessionResponseFromTgUser(tgUser);
+  } catch (e) {
+    console.error("[api/telegram/auth]", e);
+    return NextResponse.json(
+      { error: "Сбой авторизации Telegram. Проверьте лог сервера, БД и TELEGRAM_BOT_TOKEN." },
+      { status: 503 }
+    );
   }
 }

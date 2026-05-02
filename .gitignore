@@ -4,4 +4,6 @@ node_modules
 dist
 coverage
 *.log
-prisma/migrations
+# миграции нужны для deploy; старый sqlite-файл не коммитим
+prisma/dev.db
+prisma/*.db
