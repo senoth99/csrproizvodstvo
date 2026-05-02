@@ -95,7 +95,7 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
             telegramPhotoUrl: u.telegramPhotoUrl ?? null
           }))}
           swapOffers={swapOffers}
-          canRequestEmployeeSwap={canRequestEmployeeSwap && !canManageSchedule}
+          canRequestEmployeeSwap={canRequestEmployeeSwap}
         />
       </div>
     );

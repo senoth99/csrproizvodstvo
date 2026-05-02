@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { isBefore, startOfDay } from "date-fns";
 import { ArrowLeftRight, Boxes, ChevronDown, Cpu, Flame, Scissors, Shirt, X } from "lucide-react";
 import { createShiftSwapRequest, managerAssignBrigadeShift, managerRemoveShift, toggleBrigadeAssignment } from "@/app/actions";
@@ -73,6 +74,7 @@ export function BrigadeBoard({
   canRequestEmployeeSwap?: boolean;
 }) {
   const [pending, start] = useTransition();
+  const router = useRouter();
   const [mode, setMode] = useState<"День" | "Вечер">("День");
   const [openBrigadeId, setOpenBrigadeId] = useState<string | null>(null);
   const [pickCtx, setPickCtx] = useState<PickCtx | null>(null);
@@ -168,6 +170,7 @@ export function BrigadeBoard({
           targetShiftId: swapTargetShift.id
         });
         setSwapTargetShift(null);
+        router.refresh();
       } catch (e) {
         setSheetError(e instanceof Error ? e.message : "Не удалось отправить запрос");
       }
@@ -297,42 +300,15 @@ export function BrigadeBoard({
                         <div className="flex flex-wrap gap-1.5">
                           {cellShifts.length === 0 ? (
                             <span className="text-xs text-muted">
-                              {canManageSchedule
-                                ? "Нажмите, чтобы назначить сотрудника"
-                                : canRequestEmployeeSwap
-                                  ? "Пусто — запишись здесь или нажми на коллегу ниже для обмена."
+                              {canRequestEmployeeSwap
+                                ? "Пусто — запишись здесь или нажми на коллегу ниже для обмена."
+                                : canManageSchedule
+                                  ? "Нажмите, чтобы назначить сотрудника"
                                   : "Пусто — нажми, чтобы записаться"}
                             </span>
                           ) : (
                             cellShifts.map((s) =>
-                              canManageSchedule ? (
-                                <button
-                                  key={s.id}
-                                  type="button"
-                                  data-shift-chip="1"
-                                  disabled={pending || isPastDay}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (isPastDay || pending) return;
-                                    setRemoveShift(s);
-                                  }}
-                                  className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-1 text-left text-[10px] transition-all duration-200 ease-out ${
-                                    isPastDay
-                                      ? "cursor-not-allowed border-border text-muted opacity-60"
-                                      : s.userId === currentUserId
-                                        ? "min-h-[2.25rem] border-foreground/20 bg-foreground/[0.07] text-foreground hover:border-muted/45 hover:bg-foreground/[0.1]"
-                                        : "min-h-[2.25rem] border-border text-muted hover:border-muted/40 hover:bg-foreground/[0.05] hover:text-foreground"
-                                  }`}
-                                >
-                                  <UserAvatar
-                                    name={s.user.name}
-                                    photoUrl={s.user.telegramPhotoUrl}
-                                    color={s.user.color}
-                                    size="sm"
-                                  />
-                                  <span className="truncate font-medium">{s.user.name}</span>
-                                </button>
-                              ) : canRequestEmployeeSwap ? (
+                              canRequestEmployeeSwap ? (
                                 <button
                                   key={s.id}
                                   type="button"
@@ -371,6 +347,33 @@ export function BrigadeBoard({
                                     <ArrowLeftRight className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
                                   ) : null}
                                 </button>
+                              ) : canManageSchedule ? (
+                                <button
+                                  key={s.id}
+                                  type="button"
+                                  data-shift-chip="1"
+                                  disabled={pending || isPastDay}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (isPastDay || pending) return;
+                                    setRemoveShift(s);
+                                  }}
+                                  className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-1 text-left text-[10px] transition-all duration-200 ease-out ${
+                                    isPastDay
+                                      ? "cursor-not-allowed border-border text-muted opacity-60"
+                                      : s.userId === currentUserId
+                                        ? "min-h-[2.25rem] border-foreground/20 bg-foreground/[0.07] text-foreground hover:border-muted/45 hover:bg-foreground/[0.1]"
+                                        : "min-h-[2.25rem] border-border text-muted hover:border-muted/40 hover:bg-foreground/[0.05] hover:text-foreground"
+                                  }`}
+                                >
+                                  <UserAvatar
+                                    name={s.user.name}
+                                    photoUrl={s.user.telegramPhotoUrl}
+                                    color={s.user.color}
+                                    size="sm"
+                                  />
+                                  <span className="truncate font-medium">{s.user.name}</span>
+                                </button>
                               ) : (
                                 <span
                                   key={s.id}
@@ -395,32 +398,6 @@ export function BrigadeBoard({
                       </>
                     );
 
-                    if (canManageSchedule) {
-                      return (
-                        <div
-                          key={`${brigade.id}-${d.index}`}
-                          role="button"
-                          tabIndex={isPastDay || pending ? -1 : 0}
-                          onClick={openPicker}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              openPicker();
-                            }
-                          }}
-                          className={`w-full rounded-xl border p-2 text-left outline-none transition-all duration-200 ease-out focus-visible:ring-2 focus-visible:ring-foreground/25 ${
-                            isPastDay
-                              ? "cursor-not-allowed border-border bg-muted/[0.04] opacity-55"
-                              : mine
-                                ? "cursor-pointer border-border bg-transparent hover:bg-foreground/[0.05]"
-                                : "cursor-pointer border-border bg-transparent hover:bg-foreground/[0.05]"
-                          }`}
-                        >
-                          {cellBody}
-                        </div>
-                      );
-                    }
-
                     if (canRequestEmployeeSwap) {
                       const backdropToggle = () => {
                         if (isPastDay || pending) return;
@@ -442,6 +419,32 @@ export function BrigadeBoard({
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
                               backdropToggle();
+                            }
+                          }}
+                          className={`w-full rounded-xl border p-2 text-left outline-none transition-all duration-200 ease-out focus-visible:ring-2 focus-visible:ring-foreground/25 ${
+                            isPastDay
+                              ? "cursor-not-allowed border-border bg-muted/[0.04] opacity-55"
+                              : mine
+                                ? "cursor-pointer border-border bg-transparent hover:bg-foreground/[0.05]"
+                                : "cursor-pointer border-border bg-transparent hover:bg-foreground/[0.05]"
+                          }`}
+                        >
+                          {cellBody}
+                        </div>
+                      );
+                    }
+
+                    if (canManageSchedule) {
+                      return (
+                        <div
+                          key={`${brigade.id}-${d.index}`}
+                          role="button"
+                          tabIndex={isPastDay || pending ? -1 : 0}
+                          onClick={openPicker}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openPicker();
                             }
                           }}
                           className={`w-full rounded-xl border p-2 text-left outline-none transition-all duration-200 ease-out focus-visible:ring-2 focus-visible:ring-foreground/25 ${
@@ -519,10 +522,6 @@ export function BrigadeBoard({
                     {swapTargetShift.zoneName}, {swapTargetShift.startTime}–{swapTargetShift.endTime}
                   </span>
                   .
-                </p>
-                <p className="mt-2 rounded-xl border border-border bg-muted/[0.04] px-2 py-1.5 text-[11px] text-muted">
-                  Второму сотруднику придёт уведомление в приложении и в Telegram (если бот включён): он может принять или
-                  отклонить.
                 </p>
               </div>
               <button
