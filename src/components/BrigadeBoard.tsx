@@ -136,6 +136,7 @@ export function BrigadeBoard({
           userId
         });
         setPickCtx(null);
+        router.refresh();
       } catch (e) {
         setSheetError(e instanceof Error ? e.message : "Не удалось назначить");
       }
@@ -149,6 +150,7 @@ export function BrigadeBoard({
         setSheetError(null);
         await managerRemoveShift(removeShift.id);
         setRemoveShift(null);
+        router.refresh();
       } catch (e) {
         setSheetError(e instanceof Error ? e.message : "Не удалось снять смену");
       }

@@ -3,6 +3,7 @@
 import { Prisma } from "@prisma/client";
 import { addHours, isBefore, isSameDay, parseISO } from "date-fns";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import {
   hashToken,
   generateRawToken,
@@ -360,25 +361,32 @@ export async function managerAssignBrigadeShift(input: unknown) {
     payload: { ...data }
   });
 
-  try {
-    const created = await prisma.shift.findUnique({ where: { id: shift.id }, include: { zone: true } });
-    if (created?.zone) {
-      const brief = describeShiftBrief(created);
-      const self = target.id === actor.id;
+  const brief = describeShiftBrief({
+    zone: { name: brigade.zoneName },
+    dayOfWeek: data.dayOfWeek,
+    weekStartDate,
+    startTime: brigade.startTime,
+    endTime: brigade.endTime
+  });
+  const selfAssigned = target.id === actor.id;
+  after(async () => {
+    try {
       await notifyUserAppAndTelegram({
         userId: target.id,
         type: AppNotificationType.SHIFT_ASSIGNED_BY_MANAGER,
-        title: self ? "Вы назначили себе смену" : "Вам назначили смену",
-        body: self ? `Вы записали себя в график: ${brief}.` : `${actor.name} записал вас в график: ${brief}.`,
-        payload: { shiftId: shift.id, selfAssigned: self },
-        telegramText: self
+        title: selfAssigned ? "Вы назначили себе смену" : "Вам назначили смену",
+        body: selfAssigned
+          ? `Вы записали себя в график: ${brief}.`
+          : `${actor.name} записал вас в график: ${brief}.`,
+        payload: { shiftId: shift.id, selfAssigned },
+        telegramText: selfAssigned
           ? `📅 Вы назначили себе смену:\n${brief}`
           : `📅 Вам назначили смену (${actor.name}):\n${brief}`
       });
+    } catch (e) {
+      console.error("[managerAssignBrigadeShift] уведомление не отправлено, смена уже создана:", e);
     }
-  } catch (e) {
-    console.error("[managerAssignBrigadeShift] уведомление не отправлено, смена уже создана:", e);
-  }
+  });
 
   revalidatePath("/schedule");
   revalidatePath("/me");
@@ -407,17 +415,19 @@ export async function managerRemoveShift(shiftId: string) {
   });
 
   if (shift.userId !== actor.id) {
-    try {
-      await notifyUserAppAndTelegram({
-        userId: shift.userId,
-        type: AppNotificationType.SHIFT_REMOVED_BY_MANAGER,
-        title: "С вас сняли смену",
-        body: `${actor.name} удалил вашу запись из графика: ${brief}.`,
-        payload: { shiftId }
-      });
-    } catch (e) {
-      console.error("[managerRemoveShift] уведомление не отправлено, запись уже удалена:", e);
-    }
+    after(async () => {
+      try {
+        await notifyUserAppAndTelegram({
+          userId: shift.userId,
+          type: AppNotificationType.SHIFT_REMOVED_BY_MANAGER,
+          title: "С вас сняли смену",
+          body: `${actor.name} удалил вашу запись из графика: ${brief}.`,
+          payload: { shiftId }
+        });
+      } catch (e) {
+        console.error("[managerRemoveShift] уведомление не отправлено, запись уже удалена:", e);
+      }
+    });
   }
 
   revalidatePath("/schedule");
