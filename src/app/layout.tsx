@@ -34,10 +34,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   let showManagerNav = false;
 
   try {
-    const normalizedUsername = (shell?.telegramUsername ?? "").toLowerCase();
     showAdminShortcut =
-      shell?.role === UserRole.SUPER_ADMIN &&
-      (normalizedUsername === "contact_voropaev" || normalizedUsername === "");
+      shell?.role === UserRole.SUPER_ADMIN || shell?.role === UserRole.ADMIN;
     showManagerNav = Boolean(shell && canOpenManagerPanel(shell));
   } catch (e) {
     console.error("[RootLayout:nav]", e);
