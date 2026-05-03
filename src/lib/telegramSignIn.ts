@@ -75,7 +75,14 @@ export async function createSessionResponseFromTgUser(
         telegramPhotoUrl: tgUser.photo_url ?? null,
         isActive: true,
         role,
-        isManager: isManagerFlag
+        isManager: isManagerFlag,
+        ...(options?.forcedRole
+          ? {
+              firstName: tgUser.first_name ?? null,
+              lastName: tgUser.last_name ?? null,
+              name: displayName
+            }
+          : {})
       },
       create: {
         telegramId: String(tgUser.id),

@@ -38,8 +38,8 @@ export async function POST() {
     }
 
     const usernameRaw = process.env.TELEGRAM_DEV_USERNAME?.replace(/^@/, "").trim() || undefined;
-    const firstName = process.env.TELEGRAM_DEV_FIRST_NAME?.trim() || "Dev";
-    const lastName = process.env.TELEGRAM_DEV_LAST_NAME?.trim() || "Tester";
+    const firstName = process.env.TELEGRAM_DEV_FIRST_NAME?.trim() || "Локальная";
+    const lastName = process.env.TELEGRAM_DEV_LAST_NAME?.trim() || "сессия";
     const forcedRole = resolveDevRole();
 
     return await createSessionResponseFromTgUser(
