@@ -19,6 +19,15 @@ export const BRIGADES: BrigadeConfig[] = [
     icon: "heat"
   },
   {
+    id: "thermopress-evening",
+    title: "Термопресс",
+    zoneName: "Термопресс",
+    startTime: "18:00",
+    endTime: "00:00",
+    shiftLabel: "Вечер",
+    icon: "heat"
+  },
+  {
     id: "dtf-plotter-day",
     title: "ДТФ и Плоттер",
     zoneName: "ДТФ и Плоттер",
@@ -28,21 +37,21 @@ export const BRIGADES: BrigadeConfig[] = [
     icon: "printer"
   },
   {
-    id: "dtf-plotter-evening",
-    title: "ДТФ и Плоттер",
-    zoneName: "ДТФ и Плоттер",
-    startTime: "18:00",
-    endTime: "00:00",
-    shiftLabel: "Вечер",
-    icon: "printer"
-  },
-  {
     id: "cutting-day",
     title: "Вырезальщики",
     zoneName: "Вырезальщики",
     startTime: "10:00",
     endTime: "18:00",
     shiftLabel: "День",
+    icon: "scissors"
+  },
+  {
+    id: "cutting-evening",
+    title: "Вырезальщики",
+    zoneName: "Вырезальщики",
+    startTime: "18:00",
+    endTime: "00:00",
+    shiftLabel: "Вечер",
     icon: "scissors"
   },
   {
