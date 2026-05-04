@@ -1,5 +1,9 @@
+"use client";
+
+import { useMemo, useState } from "react";
 import { Boxes, Cpu, Flame, Scissors, Shirt } from "lucide-react";
-import type { BrigadeConfig } from "@/lib/brigades";
+import { BrigadeModeTabs } from "@/components/BrigadeModeTabs";
+import type { BrigadeConfig, BrigadeShiftLabel } from "@/lib/brigades";
 import { UserAvatar } from "@/components/UserAvatar";
 import { cn } from "@/lib/utils";
 
@@ -34,27 +38,43 @@ export function ManagerTodayBrigades({
   weekdayLabel: string;
   dateLabel: string;
 }) {
-  const grouped = new Map<string, ManagerTodayShift[]>();
-  for (const s of shifts) {
-    const k = cellKey(s.zoneName, s.startTime, s.endTime);
-    const list = grouped.get(k) ?? [];
-    list.push(s);
-    grouped.set(k, list);
-  }
+  const [mode, setMode] = useState<BrigadeShiftLabel>("День");
+
+  const modeCounts = useMemo(() => {
+    const c: Record<BrigadeShiftLabel, number> = { День: 0, Вечер: 0, Ночь: 0 };
+    for (const b of brigades) c[b.shiftLabel]++;
+    return c;
+  }, [brigades]);
+
+  const visibleBrigades = useMemo(() => brigades.filter((b) => b.shiftLabel === mode), [brigades, mode]);
+
+  const grouped = useMemo(() => {
+    const m = new Map<string, ManagerTodayShift[]>();
+    for (const s of shifts) {
+      const k = cellKey(s.zoneName, s.startTime, s.endTime);
+      const list = m.get(k) ?? [];
+      list.push(s);
+      m.set(k, list);
+    }
+    return m;
+  }, [shifts]);
 
   return (
     <div className="space-y-3 animate-in">
-      <div className="rounded-lg border border-border bg-card px-3 py-2.5">
-        <h2 className="text-sm font-bold uppercase tracking-display">Бригада на сегодня</h2>
-        <p className="mt-1 text-xs leading-relaxed text-muted">
-          <span className="font-medium text-foreground/90">{weekdayLabel}</span>
-          <span className="text-muted"> · </span>
-          <span>{dateLabel}</span>
-        </p>
+      <div className="sticky top-0 z-10 space-y-2.5 rounded-xl border border-border bg-card/95 p-3 shadow-sm backdrop-blur-md [-webkit-backdrop-filter:blur(10px)] sm:p-3.5">
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-display">Бригады на сегодня</h2>
+          <p className="mt-1 text-xs leading-relaxed text-muted">
+            <span className="font-medium text-foreground/90">{weekdayLabel}</span>
+            <span className="text-muted"> · </span>
+            <span>{dateLabel}</span>
+          </p>
+        </div>
+        <BrigadeModeTabs value={mode} onChange={setMode} counts={modeCounts} />
       </div>
 
-      <div className="space-y-2.5">
-        {brigades.map((brigade) => {
+      <div className="grid gap-2.5 sm:grid-cols-2">
+        {visibleBrigades.map((brigade) => {
           const Icon = iconMap[brigade.icon];
           const key = cellKey(brigade.zoneName, brigade.startTime, brigade.endTime);
           const cellShifts = grouped.get(key) ?? [];
@@ -103,7 +123,7 @@ export function ManagerTodayBrigades({
                 ) : (
                   <div
                     className={cn(
-                      "flex min-h-[3rem] items-center justify-center rounded-xl border border-dashed px-3 py-2.5",
+                      "flex min-h-[2.75rem] items-center justify-center rounded-xl border border-dashed px-3 py-2.5",
                       "border-highlight/35 bg-highlight/[0.06] text-center"
                     )}
                   >

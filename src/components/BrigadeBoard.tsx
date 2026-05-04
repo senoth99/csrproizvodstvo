@@ -4,8 +4,9 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Boxes, ChevronDown, Cpu, Flame, Scissors, Shirt, X } from "lucide-react";
 import { managerAssignBrigadeShift, managerRemoveShift, toggleBrigadeAssignment } from "@/app/actions";
+import { BrigadeModeTabs } from "@/components/BrigadeModeTabs";
 import { UserAvatar } from "@/components/UserAvatar";
-import type { BrigadeConfig } from "@/lib/brigades";
+import type { BrigadeConfig, BrigadeShiftLabel } from "@/lib/brigades";
 import { formatDateRu, isBeforeAppDay, isoFromWeekDay, safeParseISO, weekDays } from "@/lib/utils";
 
 export type BrigadeAssignableEmployee = {
@@ -65,7 +66,7 @@ export function BrigadeBoard({
 }) {
   const [pending, start] = useTransition();
   const router = useRouter();
-  const [mode, setMode] = useState<"День" | "Вечер">("День");
+  const [mode, setMode] = useState<BrigadeShiftLabel>("День");
   const [openBrigadeId, setOpenBrigadeId] = useState<string | null>(null);
   const [pickCtx, setPickCtx] = useState<PickCtx | null>(null);
   const [removeShift, setRemoveShift] = useState<ShiftWithUser | null>(null);
@@ -78,6 +79,10 @@ export function BrigadeBoard({
   useEffect(() => {
     if (removeShift) setSheetError(null);
   }, [removeShift]);
+
+  useEffect(() => {
+    setOpenBrigadeId(null);
+  }, [mode]);
 
   const weekStartDate = safeParseISO(weekStartDateIso);
   const weekRangeLabel = `${formatDateRu(weekStartDate, "dd.MM")} - ${formatDateRu(
@@ -92,6 +97,12 @@ export function BrigadeBoard({
     grouped.set(key, list);
   }
   const visibleBrigades = useMemo(() => brigades.filter((b) => b.shiftLabel === mode), [brigades, mode]);
+
+  const modeCounts = useMemo(() => {
+    const c: Record<BrigadeShiftLabel, number> = { День: 0, Вечер: 0, Ночь: 0 };
+    for (const b of brigades) c[b.shiftLabel]++;
+    return c;
+  }, [brigades]);
 
   const pickerList = useMemo(() => {
     if (!pickCtx) return [];
@@ -134,35 +145,13 @@ export function BrigadeBoard({
 
   return (
     <div className="space-y-4 animate-in">
-      <div className="rounded-lg border border-border bg-card px-3 py-2.5">
-        <div className="flex items-center justify-between gap-2">
-          <div>
-            <h2 className="text-sm font-bold uppercase tracking-display">График работы</h2>
-          </div>
-          <div className="inline-flex rounded-md border border-border bg-background p-0.5">
-            <button
-              type="button"
-              onClick={() => setMode("День")}
-              className={`min-h-9 touch-manipulation rounded px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-display transition-all duration-200 ease-out ${
-                mode === "День" ? "bg-accent text-foreground" : "text-muted"
-              }`}
-            >
-              День
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode("Вечер")}
-              className={`min-h-9 touch-manipulation rounded px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-display transition-all duration-200 ease-out ${
-                mode === "Вечер" ? "bg-accent text-foreground" : "text-muted"
-              }`}
-            >
-              Вечер
-            </button>
-          </div>
-        </div>
+      <div className="sticky top-0 z-10 space-y-2.5 rounded-xl border border-border bg-card/95 p-3 shadow-sm backdrop-blur-md [-webkit-backdrop-filter:blur(10px)] sm:p-3.5">
+        <h2 className="text-sm font-bold uppercase tracking-display">График работы</h2>
+        <BrigadeModeTabs value={mode} onChange={setMode} counts={modeCounts} />
       </div>
 
-      {visibleBrigades.map((brigade) => {
+      <div className="grid gap-3 sm:grid-cols-2">
+        {visibleBrigades.map((brigade) => {
         const Icon = iconMap[brigade.icon];
         const isOpen = openBrigadeId === brigade.id;
         const hasMyShiftInBrigade = weekDays.some((d) => {
@@ -368,6 +357,7 @@ export function BrigadeBoard({
           </section>
         );
       })}
+      </div>
       {visibleBrigades.length === 0 ? (
         <div className="card text-sm text-muted">На этот режим бригад пока нет.</div>
       ) : null}
