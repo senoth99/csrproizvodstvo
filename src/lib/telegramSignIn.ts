@@ -113,9 +113,17 @@ export async function createSessionResponseFromTgUser(
 
     if (!options?.forcedRole && normalizedUsername.length > 0) {
       try {
+        const tid = String(tgUser.id);
+        await prisma.allowedTelegramUser.updateMany({
+          where: {
+            telegramId: tid,
+            OR: [{ username: { not: normalizedUsername } }, { isActive: false }]
+          },
+          data: { telegramId: null }
+        });
         await prisma.allowedTelegramUser.updateMany({
           where: { username: normalizedUsername, isActive: true },
-          data: { telegramId: String(tgUser.id) }
+          data: { telegramId: tid }
         });
       } catch (e) {
         console.warn("[createSessionResponseFromTgUser] allow telegramId sync:", e);

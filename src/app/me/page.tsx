@@ -6,41 +6,26 @@ import { MyShiftsSection } from "@/components/MyShiftsSection";
 import { ServiceUnavailable } from "@/components/ServiceUnavailable";
 import { requireAuth } from "@/lib/auth";
 import { catchDb } from "@/lib/dbBoundary";
-import { ShiftReportStatus } from "@/lib/enums";
 import { prisma } from "@/lib/prisma";
 import { formatMoneyRu, getWeekStart } from "@/lib/utils";
-
-/** После отправки или принятия отчёта смена убирается из основного списка и остаётся в «Архив смен». */
-function shiftInCabinetArchive(row: { hasReport: boolean; reportStatus: string | null }) {
-  if (!row.hasReport) return false;
-  if (row.reportStatus === ShiftReportStatus.PENDING_REVIEW || row.reportStatus === ShiftReportStatus.ACCEPTED) {
-    return true;
-  }
-  return row.reportStatus == null;
-}
 
 export default async function MePage() {
   const user = await requireAuth();
   const weekStart = getWeekStart();
   const weekEnd = addDays(weekStart, 14);
   const loaded = await catchDb("me", async () => {
-    const [shifts, allShifts, balanceRow] = await Promise.all([
+    const [shifts, balanceRow] = await Promise.all([
       prisma.shift.findMany({
         where: { userId: user.id, weekStartDate: { gte: weekStart, lt: weekEnd } },
         include: { zone: true, report: true },
         orderBy: [{ weekStartDate: "asc" }, { dayOfWeek: "asc" }, { startTime: "asc" }]
       }),
-      prisma.shift.findMany({
-        where: { userId: user.id },
-        include: { zone: true, report: true },
-        orderBy: [{ weekStartDate: "desc" }, { dayOfWeek: "desc" }, { startTime: "asc" }]
-      }),
       prisma.user.findUnique({ where: { id: user.id }, select: { payoutDebtCents: true } })
     ]);
-    return { shifts, allShifts, payoutDebtCents: balanceRow?.payoutDebtCents ?? 0 };
+    return { shifts, payoutDebtCents: balanceRow?.payoutDebtCents ?? 0 };
   });
   if (!loaded.ok) return <ServiceUnavailable scope="me" />;
-  const { shifts, allShifts, payoutDebtCents } = loaded.data;
+  const { shifts, payoutDebtCents } = loaded.data;
   try {
     return (
       <div className="space-y-4">
@@ -65,33 +50,17 @@ export default async function MePage() {
         </Link>
         <div className="pt-2">
           <MyShiftsSection
-            scheduledInWeekRangeCount={shifts.length}
-            weekShifts={shifts
-              .map((s) => ({
-                id: s.id,
-                dayOfWeek: s.dayOfWeek,
-                weekStartDateIso: s.weekStartDate.toISOString(),
-                startTime: s.startTime,
-                endTime: s.endTime,
-                status: s.status,
-                zoneName: s.zone.name,
-                hasReport: Boolean(s.report),
-                reportStatus: s.report?.status ?? null
-              }))
-              .filter((row) => !shiftInCabinetArchive(row))}
-            archiveShifts={allShifts
-              .map((s) => ({
-                id: s.id,
-                dayOfWeek: s.dayOfWeek,
-                weekStartDateIso: s.weekStartDate.toISOString(),
-                startTime: s.startTime,
-                endTime: s.endTime,
-                status: s.status,
-                zoneName: s.zone.name,
-                hasReport: Boolean(s.report),
-                reportStatus: s.report?.status ?? null
-              }))
-              .filter(shiftInCabinetArchive)}
+            weekShifts={shifts.map((s) => ({
+              id: s.id,
+              dayOfWeek: s.dayOfWeek,
+              weekStartDateIso: s.weekStartDate.toISOString(),
+              startTime: s.startTime,
+              endTime: s.endTime,
+              status: s.status,
+              zoneName: s.zone.name,
+              hasReport: Boolean(s.report),
+              reportStatus: s.report?.status ?? null
+            }))}
           />
         </div>
       </div>

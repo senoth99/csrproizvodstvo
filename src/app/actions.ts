@@ -919,6 +919,10 @@ export async function addAllowedTelegramUser(input: unknown) {
       telegramId: matchUser?.telegramId ?? null
     }
   });
+  await prisma.user.updateMany({
+    where: { telegramUsername: data.username, role: { not: UserRole.SUPER_ADMIN } },
+    data: { isActive: true }
+  });
   const userIdsToFlag = usersForMatch
     .filter((u) => (u.telegramUsername ?? "").toLowerCase() === data.username)
     .map((u) => u.id);
@@ -980,7 +984,10 @@ export async function adminSetTelegramUserManager(input: unknown) {
 
 export async function toggleAllowedTelegramUser(id: string, active: boolean) {
   const actor = await requireRole([UserRole.SUPER_ADMIN]);
-  await prisma.allowedTelegramUser.update({ where: { id }, data: { isActive: active } });
+  await prisma.allowedTelegramUser.update({
+    where: { id },
+    data: active ? { isActive: true } : { isActive: false, telegramId: null }
+  });
   await writeAuditLog({
     actorUserId: actor.id,
     action: active ? "ENABLE_TELEGRAM_USER" : "DISABLE_TELEGRAM_USER",
@@ -1035,7 +1042,7 @@ export async function revokeTelegramAccessByUsername(usernameInput: string) {
   }
   await prisma.allowedTelegramUser.updateMany({
     where: { username },
-    data: { isActive: false }
+    data: { isActive: false, telegramId: null }
   });
   await prisma.user.updateMany({
     where: { telegramUsername: username, role: { not: UserRole.SUPER_ADMIN } },
@@ -1066,7 +1073,7 @@ export async function deleteEmployeeByUsername(usernameInput: string) {
   await prisma.$transaction(async (tx) => {
     await tx.allowedTelegramUser.updateMany({
       where: { username },
-      data: { isActive: false }
+      data: { isActive: false, telegramId: null }
     });
     if (targets.length > 0) {
       await tx.user.deleteMany({
