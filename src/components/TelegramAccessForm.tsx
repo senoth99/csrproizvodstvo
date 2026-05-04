@@ -12,6 +12,7 @@ import {
 } from "@/app/actions";
 import { UserRole } from "@/lib/enums";
 import { UserAvatar } from "@/components/UserAvatar";
+import { ManagerEmployeeProfileClient } from "@/components/ManagerEmployeeProfileClient";
 
 type AllowedRow = {
   id: string;
@@ -32,6 +33,7 @@ type UserRow = {
   isManager: boolean;
   photoUrl?: string | null;
   color?: string | null;
+  ndaSigned?: boolean;
 };
 
 type SuperAdminFallback = {
@@ -53,6 +55,7 @@ type MergedRow = {
   accessRowId?: string;
   photoUrl?: string | null;
   color?: string | null;
+  ndaSigned?: boolean;
 };
 
 export function TelegramAccessForm({
@@ -72,6 +75,8 @@ export function TelegramAccessForm({
   const [username, setUsername] = useState("");
   const [inviteAsManager, setInviteAsManager] = useState(false);
   const [selected, setSelected] = useState<MergedRow | null>(null);
+  const [employeeProfileRow, setEmployeeProfileRow] = useState<MergedRow | null>(null);
+  const [preLoginHint, setPreLoginHint] = useState<string | null>(null);
   const [editFirstName, setEditFirstName] = useState("");
   const [editLastName, setEditLastName] = useState("");
   const [editIsManager, setEditIsManager] = useState(false);
@@ -86,6 +91,12 @@ export function TelegramAccessForm({
       setManagerToggleError("");
     }
   }, [selected]);
+
+  useEffect(() => {
+    if (!preLoginHint) return;
+    const t = window.setTimeout(() => setPreLoginHint(null), 4500);
+    return () => window.clearTimeout(t);
+  }, [preLoginHint]);
 
   const merged = (() => {
     const map = new Map<string, MergedRow>();
@@ -102,7 +113,8 @@ export function TelegramAccessForm({
         accessRowId: undefined,
         isManager: u.isManager,
         photoUrl: u.photoUrl ?? null,
-        color: u.color ?? null
+        color: u.color ?? null,
+        ndaSigned: u.ndaSigned ?? false
       });
     }
     for (const r of rows) {
@@ -118,7 +130,8 @@ export function TelegramAccessForm({
         accessRowId: r.id,
         isManager: r.isManager ?? existing?.isManager ?? false,
         photoUrl: existing?.photoUrl ?? null,
-        color: existing?.color ?? null
+        color: existing?.color ?? null,
+        ndaSigned: existing?.ndaSigned ?? false
       });
     }
     const list = Array.from(map.values()).sort((a, b) => {
@@ -141,7 +154,8 @@ export function TelegramAccessForm({
         lastName: superAdminFallback?.lastName ?? "",
         isManager: false,
         photoUrl: null,
-        color: null
+        color: null,
+        ndaSigned: false
       });
     }
     return list;
@@ -197,11 +211,22 @@ export function TelegramAccessForm({
         {error ? <p className="text-sm font-medium text-foreground/85 md:col-span-2">{error}</p> : null}
       </form>
 
+      {preLoginHint ? (
+        <p className="text-sm text-muted" role="status">
+          {preLoginHint}
+        </p>
+      ) : null}
+
       <div className="space-y-2">
-        {merged.map((row) => (
-          <div key={row.username} className="card flex w-full items-center justify-between gap-2 text-left">
-            <div className="flex min-w-0 items-center gap-2">
-              <UserAvatar name={row.name} photoUrl={row.photoUrl} color={row.color} size="md" />
+        {merged.map((row) => {
+          const rowMain = (
+            <>
+              <UserAvatar
+                name={row.name}
+                photoUrl={row.photoUrl}
+                color={row.color ?? undefined}
+                size="md"
+              />
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2 font-semibold">
                   <span className="truncate">{row.name}</span>
@@ -213,12 +238,36 @@ export function TelegramAccessForm({
                 </div>
                 <div className="text-xs text-muted">@{row.username}</div>
               </div>
-            </div>
+            </>
+          );
+          return (
+            <div key={row.username} className="card flex w-full items-center justify-between gap-2 text-left">
+              {variant === "manager" ? (
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-0.5 text-left outline-none transition hover:bg-foreground/[0.03] focus-visible:ring-2 focus-visible:ring-border"
+                  onClick={() => {
+                    setSelected(null);
+                    if (row.userId) {
+                      setEmployeeProfileRow(row);
+                    } else {
+                      setPreLoginHint(
+                        "Сотрудник ещё не входил в приложение — отметка NDA будет доступна после первого входа."
+                      );
+                    }
+                  }}
+                >
+                  {rowMain}
+                </button>
+              ) : (
+                <div className="flex min-w-0 flex-1 items-center gap-2">{rowMain}</div>
+              )}
             <div className="flex shrink-0 items-center gap-1">
               <button
                 type="button"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border bg-surface text-muted transition hover:text-foreground"
                 onClick={() => {
+                  setEmployeeProfileRow(null);
                   setSelected(row);
                   setEditFirstName(row.firstName);
                   setEditLastName(row.lastName);
@@ -252,6 +301,7 @@ export function TelegramAccessForm({
                     try {
                       await revokeTelegramAccessByUsername(row.username);
                       if (selected?.username === row.username) setSelected(null);
+                      setEmployeeProfileRow((cur) => (cur?.username === row.username ? null : cur));
                       router.refresh();
                     } catch (err) {
                       setError(err instanceof Error ? err.message : "Не удалось отозвать доступ");
@@ -263,8 +313,42 @@ export function TelegramAccessForm({
               </button>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
+
+      {employeeProfileRow?.userId && variant === "manager" ? (
+        <div className="fixed inset-0 z-[180] flex items-center justify-center bg-background/85 p-3 backdrop-blur-[2px]">
+          <button
+            type="button"
+            className="absolute inset-0"
+            aria-label="Закрыть"
+            onClick={() => setEmployeeProfileRow(null)}
+          />
+          <div className="relative w-full max-w-lg">
+            <button
+              type="button"
+              className="absolute right-0 top-0 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface text-muted transition hover:text-foreground"
+              onClick={() => setEmployeeProfileRow(null)}
+              aria-label="Закрыть"
+            >
+              <X size={14} />
+            </button>
+            <ManagerEmployeeProfileClient
+              employee={{
+                id: employeeProfileRow.userId,
+                name: employeeProfileRow.name,
+                firstName: employeeProfileRow.firstName.trim() ? employeeProfileRow.firstName : null,
+                lastName: employeeProfileRow.lastName.trim() ? employeeProfileRow.lastName : null,
+                telegramUsername: employeeProfileRow.username,
+                telegramPhotoUrl: employeeProfileRow.photoUrl ?? null,
+                color: employeeProfileRow.color ?? "#1f8f5f",
+                ndaSigned: employeeProfileRow.ndaSigned ?? false
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
 
       {selected ? (
         <div className="fixed inset-0 z-[180] flex items-center justify-center bg-background/85 p-3 backdrop-blur-[2px]">
@@ -370,6 +454,7 @@ export function TelegramAccessForm({
                         return;
                       await revokeTelegramAccessByUsername(selected.username);
                       setSelected(null);
+                      setEmployeeProfileRow((cur) => (cur?.username === selected.username ? null : cur));
                       router.refresh();
                     })
                   }
@@ -387,6 +472,7 @@ export function TelegramAccessForm({
                     start(async () => {
                       await deleteEmployeeByUsername(selected.username);
                       setSelected(null);
+                      setEmployeeProfileRow((cur) => (cur?.username === selected.username ? null : cur));
                       router.refresh();
                     })
                   }

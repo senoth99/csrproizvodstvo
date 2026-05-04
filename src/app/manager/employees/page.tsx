@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { redirect } from "next/navigation";
-import { ManagerEmployeesClient, type ManagerEmployeeListItem } from "@/components/ManagerEmployeesClient";
 import { ServiceUnavailable } from "@/components/ServiceUnavailable";
 import { TelegramAccessForm } from "@/components/TelegramAccessForm";
 import { requireAuth } from "@/lib/auth";
@@ -23,20 +22,7 @@ export default async function ManagerEmployeesPage() {
 
   const loaded = await catchDb("manager/employees", async () => {
     await ensureManagerDemoEmployeesIfEmpty();
-    const [employees, accessRows, accessUsers] = await Promise.all([
-      prisma.user.findMany({
-        where: { role: UserRole.EMPLOYEE },
-        orderBy: { name: "asc" },
-        select: {
-          id: true,
-          name: true,
-          firstName: true,
-          lastName: true,
-          telegramUsername: true,
-          telegramPhotoUrl: true,
-          color: true
-        }
-      }),
+    const [accessRows, accessUsers] = await Promise.all([
       prisma.allowedTelegramUser.findMany({
         where: { isActive: true, role: UserRole.EMPLOYEE },
         orderBy: { createdAt: "desc" }
@@ -54,25 +40,16 @@ export default async function ManagerEmployeesPage() {
           isActive: true,
           isManager: true,
           telegramPhotoUrl: true,
-          color: true
+          color: true,
+          ndaSigned: true
         }
       })
     ]);
-    return { employees, accessRows, accessUsers };
+    return { accessRows, accessUsers };
   });
   if (!loaded.ok) return <ServiceUnavailable scope="manager/employees" />;
 
-  const { employees, accessRows, accessUsers } = loaded.data;
-
-  const list: ManagerEmployeeListItem[] = employees.map((u) => ({
-    id: u.id,
-    name: u.name,
-    firstName: u.firstName,
-    lastName: u.lastName,
-    telegramUsername: u.telegramUsername,
-    telegramPhotoUrl: u.telegramPhotoUrl,
-    color: u.color
-  }));
+  const { accessRows, accessUsers } = loaded.data;
 
   return (
     <div className="space-y-6 pb-4">
@@ -88,12 +65,7 @@ export default async function ManagerEmployeesPage() {
       <h1 className="text-2xl font-bold tracking-tight">Сотрудники</h1>
 
       <section className="space-y-2">
-        <div>
-          <h2 className="text-sm font-bold uppercase tracking-display text-muted">Доступ по Telegram</h2>
-          <p className="mt-1 text-sm text-muted">
-            Добавьте @username — человек сможет войти в приложение. Фото подтягиваются после первого входа через Telegram.
-          </p>
-        </div>
+        <h2 className="text-sm font-bold uppercase tracking-display text-muted">Доступ по Telegram</h2>
         <TelegramAccessForm
           variant="manager"
           telegramSuperUsername={telegramSuperUsername}
@@ -114,15 +86,11 @@ export default async function ManagerEmployeesPage() {
             isActive: u.isActive,
             isManager: u.isManager,
             photoUrl: u.telegramPhotoUrl,
-            color: u.color
+            color: u.color,
+            ndaSigned: u.ndaSigned
           }))}
           superAdminFallback={null}
         />
-      </section>
-
-      <section className="space-y-2">
-        <h2 className="text-sm font-bold uppercase tracking-display text-muted">Список сотрудников</h2>
-        <ManagerEmployeesClient employees={list} />
       </section>
     </div>
   );

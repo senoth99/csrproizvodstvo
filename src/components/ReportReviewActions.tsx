@@ -121,10 +121,6 @@ export function ReportReviewActions({
   return (
     <div className="card space-y-4 border-highlight/35 bg-highlight/[0.06]">
       <p className="text-xs font-bold uppercase tracking-display text-foreground">Начисление за смену</p>
-      <p className="text-xs leading-relaxed text-muted">
-        Укажите суммы по двум статьям — на баланс сотрудника попадёт <span className="font-medium text-foreground">их сумма</span>
-        . В истории выплат отобразится одно начисление на общую сумму.
-      </p>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-lg border border-border/70 bg-card/40 px-3 py-2.5">
           <label className="mb-2 block text-[10px] font-bold uppercase tracking-display text-muted">За выход, ₽</label>

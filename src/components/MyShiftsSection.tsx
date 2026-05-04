@@ -135,8 +135,8 @@ export function MyShiftsSection({
       <button
         type="button"
         className={
-          "btn-secondary fixed bottom-20 inset-x-3 z-[180] mx-auto inline-flex min-h-12 w-auto max-w-md touch-manipulation items-center justify-center gap-2 pointer-events-auto transition-opacity duration-200 " +
-          (showArchive ? "opacity-60" : "")
+          "btn-secondary fixed bottom-20 inset-x-3 z-[180] mx-auto inline-flex min-h-12 w-auto max-w-md touch-manipulation items-center justify-center gap-2 border-border bg-card shadow-lg pointer-events-auto transition-[box-shadow,colors] duration-200 active:!opacity-100 " +
+          (showArchive ? "ring-2 ring-accent/60 ring-offset-2 ring-offset-background" : "")
         }
         onClick={() => setShowArchive((v) => !v)}
         aria-expanded={showArchive}
