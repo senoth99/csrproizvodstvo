@@ -9,7 +9,7 @@ export default async function AdminAccessPage() {
   await requireRole([UserRole.SUPER_ADMIN]);
   const loaded = await catchDb("admin/access", async () => {
     const [rows, superAdmin, users] = await Promise.all([
-      prisma.allowedTelegramUser.findMany({ orderBy: { createdAt: "desc" } }),
+      prisma.allowedTelegramUser.findMany({ where: { isActive: true }, orderBy: { createdAt: "desc" } }),
       prisma.user.findFirst({
         where: { role: UserRole.SUPER_ADMIN },
         orderBy: { createdAt: "asc" }

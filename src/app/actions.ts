@@ -961,15 +961,37 @@ export async function addAllowedTelegramUser(input: unknown) {
     });
     if (existingSuperAdmin) throw new Error("Суперадмин может быть только один.");
   }
+  const usersForMatch = await prisma.user.findMany({
+    where: { telegramUsername: { not: null } },
+    select: { id: true, telegramId: true, telegramUsername: true }
+  });
+  const matchUser = usersForMatch.find((u) => (u.telegramUsername ?? "").toLowerCase() === data.username);
+
   const row = await prisma.allowedTelegramUser.upsert({
     where: { username: data.username },
-    update: { role, isActive: true, isManager: managerFlag },
-    create: { username: data.username, role, isActive: true, isManager: managerFlag }
+    update: {
+      role,
+      isActive: true,
+      isManager: managerFlag,
+      ...(matchUser?.telegramId ? { telegramId: matchUser.telegramId } : {})
+    },
+    create: {
+      username: data.username,
+      role,
+      isActive: true,
+      isManager: managerFlag,
+      telegramId: matchUser?.telegramId ?? null
+    }
   });
-  await prisma.user.updateMany({
-    where: { telegramUsername: data.username },
-    data: { isManager: managerFlag }
-  });
+  const userIdsToFlag = usersForMatch
+    .filter((u) => (u.telegramUsername ?? "").toLowerCase() === data.username)
+    .map((u) => u.id);
+  if (userIdsToFlag.length > 0) {
+    await prisma.user.updateMany({
+      where: { id: { in: userIdsToFlag } },
+      data: { isManager: managerFlag }
+    });
+  }
   await writeAuditLog({
     actorUserId: actor.id,
     action: "ALLOW_TELEGRAM_USER",
@@ -1080,17 +1102,23 @@ export async function deleteEmployeeByUsername(usernameInput: string) {
   const superAdminUsername = (process.env.TELEGRAM_ADMIN_USERNAME ?? "").trim().toLowerCase().replace(/^@/, "");
   if (username === superAdminUsername) throw new Error("Суперадмина нельзя удалить.");
 
-  const target = await prisma.user.findFirst({ where: { telegramUsername: username } });
-  if (target?.role === UserRole.SUPER_ADMIN) throw new Error("Суперадмина нельзя удалить.");
+  const candidates = await prisma.user.findMany({
+    where: { telegramUsername: { not: null } },
+    select: { id: true, role: true, telegramUsername: true }
+  });
+  const targets = candidates.filter((u) => (u.telegramUsername ?? "").toLowerCase() === username);
+  if (targets.some((u) => u.role === UserRole.SUPER_ADMIN)) throw new Error("Суперадмина нельзя удалить.");
 
   await prisma.$transaction(async (tx) => {
-    await tx.allowedTelegramUser.deleteMany({ where: { username } });
-    await tx.user.deleteMany({
-      where: {
-        telegramUsername: username,
-        role: { not: UserRole.SUPER_ADMIN }
-      }
+    await tx.allowedTelegramUser.updateMany({
+      where: { username },
+      data: { isActive: false }
     });
+    if (targets.length > 0) {
+      await tx.user.deleteMany({
+        where: { id: { in: targets.map((t) => t.id) }, role: { not: UserRole.SUPER_ADMIN } }
+      });
+    }
   });
 
   await writeAuditLog({

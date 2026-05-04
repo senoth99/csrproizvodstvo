@@ -23,9 +23,17 @@ export async function getTelegramAllowanceRole(tgUser: TgMiniAppUser): Promise<U
     .toLowerCase();
   const adminTgId = process.env.TELEGRAM_ADMIN_TELEGRAM_ID?.trim();
   const normalizedUsername = (tgUser.username ?? "").toLowerCase();
-  const allowed = await prisma.allowedTelegramUser.findFirst({
-    where: { username: normalizedUsername, isActive: true }
-  });
+  let allowed =
+    normalizedUsername.length > 0
+      ? await prisma.allowedTelegramUser.findFirst({
+          where: { username: normalizedUsername, isActive: true }
+        })
+      : null;
+  if (!allowed && tgUser.id != null) {
+    allowed = await prisma.allowedTelegramUser.findFirst({
+      where: { telegramId: String(tgUser.id), isActive: true }
+    });
+  }
   const fallbackByUsername = normalizedUsername.length > 0 && normalizedUsername === adminUsername;
   const fallbackById = Boolean(adminTgId && String(tgUser.id) === adminTgId);
   const fallbackAdminAllowed = fallbackByUsername || fallbackById;
@@ -66,12 +74,17 @@ export async function createSessionResponseFromTgUser(
         where: { username: normalizedUsername, isActive: true }
       });
       if (allow) isManagerFlag = allow.isManager;
+    } else if (tgUser.id != null) {
+      const allowById = await prisma.allowedTelegramUser.findFirst({
+        where: { telegramId: String(tgUser.id), isActive: true }
+      });
+      if (allowById) isManagerFlag = allowById.isManager;
     }
 
     const user = await prisma.user.upsert({
       where: { telegramId: String(tgUser.id) },
       update: {
-        telegramUsername: tgUser.username ?? null,
+        telegramUsername: normalizedUsername.length > 0 ? normalizedUsername : null,
         telegramPhotoUrl: tgUser.photo_url ?? null,
         isActive: true,
         role,
@@ -86,7 +99,7 @@ export async function createSessionResponseFromTgUser(
       },
       create: {
         telegramId: String(tgUser.id),
-        telegramUsername: tgUser.username ?? null,
+        telegramUsername: normalizedUsername.length > 0 ? normalizedUsername : null,
         telegramPhotoUrl: tgUser.photo_url ?? null,
         firstName: tgUser.first_name ?? null,
         lastName: tgUser.last_name ?? null,
@@ -97,6 +110,17 @@ export async function createSessionResponseFromTgUser(
         isManager: isManagerFlag
       }
     });
+
+    if (!options?.forcedRole && normalizedUsername.length > 0) {
+      try {
+        await prisma.allowedTelegramUser.updateMany({
+          where: { username: normalizedUsername, isActive: true },
+          data: { telegramId: String(tgUser.id) }
+        });
+      } catch (e) {
+        console.warn("[createSessionResponseFromTgUser] allow telegramId sync:", e);
+      }
+    }
 
     const jwt = await signSessionToken(buildSessionPayload(user));
     const res = NextResponse.json({

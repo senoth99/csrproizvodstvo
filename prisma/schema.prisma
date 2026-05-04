@@ -37,13 +37,15 @@ model User {
 }
 
 model AllowedTelegramUser {
-  id        String   @id @default(cuid())
-  username  String   @unique
-  role      String   @default("EMPLOYEE")
-  isManager Boolean  @default(false)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String  @id @default(cuid())
+  username   String  @unique
+  /// Совпадение с User.telegramId — если в Mini App нет username в initData.
+  telegramId String? @unique
+  role        String   @default("EMPLOYEE")
+  isManager   Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 // Браузерный вход: токен в /start или текстом боту
