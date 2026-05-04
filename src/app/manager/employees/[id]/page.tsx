@@ -25,7 +25,8 @@ export default async function ManagerEmployeeDetailPage({ params }: { params: Pr
         firstName: true,
         lastName: true,
         telegramUsername: true,
-        color: true
+        color: true,
+        ndaSigned: true
       }
     })
   );
@@ -40,7 +41,8 @@ export default async function ManagerEmployeeDetailPage({ params }: { params: Pr
     firstName: row.firstName,
     lastName: row.lastName,
     telegramUsername: row.telegramUsername,
-    color: row.color
+    color: row.color,
+    ndaSigned: row.ndaSigned
   };
 
   return (

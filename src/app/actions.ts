@@ -43,6 +43,11 @@ const managerBrigadeAssignSchema = z.object({
   userId: z.string()
 });
 
+const updateEmployeeNdaSignedSchema = z.object({
+  userId: z.string(),
+  ndaSigned: z.boolean()
+});
+
 const shiftSwapCreateSchema = z.object({
   requesterShiftId: z.string(),
   targetShiftId: z.string()
@@ -433,6 +438,32 @@ export async function managerRemoveShift(shiftId: string) {
   revalidatePath("/schedule");
   revalidatePath("/me");
   revalidatePath("/");
+}
+
+export async function updateEmployeeNdaSigned(input: unknown) {
+  const actor = await requireAuth();
+  if (!canOpenManagerPanel(actor)) throw new Error("Недостаточно прав.");
+  const data = updateEmployeeNdaSignedSchema.parse(input);
+
+  const target = await prisma.user.findUnique({
+    where: { id: data.userId },
+    select: { id: true, role: true }
+  });
+  if (!target || target.role !== UserRole.EMPLOYEE) throw new Error("Сотрудник не найден.");
+
+  await prisma.user.update({
+    where: { id: data.userId },
+    data: { ndaSigned: data.ndaSigned }
+  });
+  await writeAuditLog({
+    actorUserId: actor.id,
+    action: "MANAGER_UPDATE_EMPLOYEE_NDA",
+    entityType: "User",
+    entityId: data.userId,
+    payload: { ndaSigned: data.ndaSigned }
+  });
+  revalidatePath("/manager/employees");
+  revalidatePath(`/manager/employees/${data.userId}`);
 }
 
 export async function managerRecordPayout(input: unknown) {

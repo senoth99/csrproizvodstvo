@@ -16,6 +16,8 @@ model User {
   telegramUsername String?
   telegramPhotoUrl String?
   profileCompleted Boolean       @default(false)
+  /// Подписание NDA (карточка сотрудника в панели руководителя).
+  ndaSigned      Boolean       @default(false)
   role           String        @default("EMPLOYEE")
   isManager      Boolean       @default(false)
   isActive       Boolean       @default(true)

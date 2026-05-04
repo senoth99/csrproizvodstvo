@@ -10,6 +10,8 @@ export type ManagerEmployeeListItem = {
   lastName: string | null;
   telegramUsername: string | null;
   color: string;
+  /** Заполняется на карточке сотрудника; в списке можно не передавать. */
+  ndaSigned?: boolean;
 };
 
 type Props = { employees: ManagerEmployeeListItem[] };

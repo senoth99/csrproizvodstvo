@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState, useTransition } from "react";
+import { updateEmployeeNdaSigned } from "@/app/actions";
 import { UserAvatar } from "@/components/UserAvatar";
 import type { ManagerEmployeeListItem } from "@/components/ManagerEmployeesClient";
 import { isFormalNameLineRedundant } from "@/lib/displayName";
@@ -8,7 +10,28 @@ import { isFormalNameLineRedundant } from "@/lib/displayName";
 type Props = { employee: ManagerEmployeeListItem };
 
 export function ManagerEmployeeProfileClient({ employee }: Props) {
-  const [ndaSigned, setNdaSigned] = useState(false);
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [ndaSigned, setNdaSigned] = useState(Boolean(employee.ndaSigned));
+
+  useEffect(() => {
+    setNdaSigned(Boolean(employee.ndaSigned));
+  }, [employee.id, employee.ndaSigned]);
+
+  function handleNdaChange(next: boolean) {
+    const prev = ndaSigned;
+    setNdaSigned(next);
+    startTransition(() => {
+      void (async () => {
+        try {
+          await updateEmployeeNdaSigned({ userId: employee.id, ndaSigned: next });
+          router.refresh();
+        } catch {
+          setNdaSigned(prev);
+        }
+      })();
+    });
+  }
 
   return (
     <div className="card flex max-w-lg flex-col overflow-hidden p-0">
@@ -48,10 +71,11 @@ export function ManagerEmployeeProfileClient({ employee }: Props) {
                   type="checkbox"
                   role="switch"
                   checked={ndaSigned}
+                  disabled={pending}
                   aria-checked={ndaSigned}
                   aria-label="NDA подписано"
-                  onChange={(e) => setNdaSigned(e.target.checked)}
-                  className="peer absolute inset-0 z-10 m-0 h-full w-full min-h-0 cursor-pointer appearance-none rounded-full border-0 bg-transparent p-0 opacity-0 shadow-none ring-0 outline-none focus:border-0 focus:ring-0 focus:ring-offset-0"
+                  onChange={(e) => handleNdaChange(e.target.checked)}
+                  className="peer absolute inset-0 z-10 m-0 h-full w-full min-h-0 cursor-pointer appearance-none rounded-full border-0 bg-transparent p-0 opacity-0 shadow-none ring-0 outline-none focus:border-0 focus:ring-0 focus:ring-offset-0 disabled:cursor-wait"
                 />
                 <span
                   className="pointer-events-none absolute inset-0 rounded-full bg-border/60 transition-colors duration-200 peer-checked:bg-muted/50"
