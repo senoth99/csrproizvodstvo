@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { MAX_APP_NOTIFICATIONS_PER_USER, trimAppNotificationsForUser } from "@/lib/notifyDispatch";
 
 export async function GET() {
   let user;
@@ -13,10 +14,11 @@ export async function GET() {
   if (!user) return NextResponse.json({ items: [], error: "unauthorized" }, { status: 401 });
 
   try {
+    await trimAppNotificationsForUser(user.id);
     const items = await prisma.appNotification.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },
-      take: 50,
+      take: MAX_APP_NOTIFICATIONS_PER_USER,
       select: {
         id: true,
         type: true,

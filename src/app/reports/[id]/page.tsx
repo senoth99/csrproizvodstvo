@@ -62,9 +62,34 @@ export default async function ReportDetailPage({ params }: { params: Promise<{ i
           {showEmployeeAccrual ? (
             <div className="rounded-lg border border-accent/45 bg-accent/15 px-4 py-3">
               <p className="text-xs font-bold uppercase tracking-display text-foreground">За смену начислено</p>
-              <p className="mt-1 text-2xl font-bold tabular-nums">
-                {formatMoneyRu(report.accrualAmountCents! / 100)}
-              </p>
+              {report.accrualAppearanceCents != null && report.accrualWorkCents != null ? (
+                <div className="mt-3 space-y-2">
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">За выход</p>
+                      <p className="mt-0.5 font-semibold tabular-nums">
+                        {formatMoneyRu(report.accrualAppearanceCents / 100)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">За работу</p>
+                      <p className="mt-0.5 font-semibold tabular-nums">
+                        {formatMoneyRu(report.accrualWorkCents / 100)}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="border-t border-accent/30 pt-2 text-sm text-muted">
+                    Итого:{" "}
+                    <span className="text-xl font-bold tabular-nums text-foreground">
+                      {formatMoneyRu(report.accrualAmountCents! / 100)}
+                    </span>
+                  </p>
+                </div>
+              ) : (
+                <p className="mt-1 text-2xl font-bold tabular-nums">
+                  {formatMoneyRu(report.accrualAmountCents! / 100)}
+                </p>
+              )}
             </div>
           ) : null}
 
@@ -76,6 +101,8 @@ export default async function ReportDetailPage({ params }: { params: Promise<{ i
             reportId={report.id}
             status={report.status}
             accrualAmountCents={report.accrualAmountCents ?? null}
+            accrualAppearanceCents={report.accrualAppearanceCents ?? null}
+            accrualWorkCents={report.accrualWorkCents ?? null}
             acceptedByName={report.acceptedBy?.name?.trim() ? report.acceptedBy.name.trim() : null}
             isAdmin={Boolean(isAdmin)}
           />

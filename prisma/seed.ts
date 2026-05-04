@@ -74,7 +74,7 @@ async function main() {
   await prisma.systemSettings.createMany({
     data: [
       { key: "schedule.slotStart", value: "10:00" },
-      { key: "schedule.slotEnd", value: "02:00" },
+      { key: "schedule.slotEnd", value: "00:00" },
       { key: "schedule.slotStepMinutes", value: "60" }
     ]
   });

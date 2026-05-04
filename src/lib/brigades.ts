@@ -32,7 +32,7 @@ export const BRIGADES: BrigadeConfig[] = [
     title: "ДТФ и Плоттер",
     zoneName: "ДТФ и Плоттер",
     startTime: "18:00",
-    endTime: "02:00",
+    endTime: "00:00",
     shiftLabel: "Вечер",
     icon: "printer"
   },
@@ -59,7 +59,7 @@ export const BRIGADES: BrigadeConfig[] = [
     title: "ЧПУ",
     zoneName: "ЧПУ",
     startTime: "18:00",
-    endTime: "02:00",
+    endTime: "00:00",
     shiftLabel: "Вечер",
     icon: "cpu"
   },

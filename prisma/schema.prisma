@@ -33,7 +33,6 @@ model User {
   auditActions   AuditLog[]    @relation("AuditActor")
   createdShifts  Shift[]       @relation("ShiftCreatedBy")
   updatedShifts  Shift[]       @relation("ShiftUpdatedBy")
-  shiftSwapRequestsSubmitted ShiftSwapRequest[] @relation("SwapRequestRequester")
   appNotifications AppNotification[]
   acceptedShiftReports ShiftReport[] @relation("ShiftReportAcceptedBy")
 }
@@ -136,27 +135,9 @@ model Shift {
   timeLog       ShiftTimeLog?
   report        ShiftReport?
   chatMessages  ChatMessage[]
-  swapRequestsAsOffer  ShiftSwapRequest[] @relation("SwapOfferShift")
-  swapRequestsAsTarget ShiftSwapRequest[] @relation("SwapTargetShift")
 
   @@index([weekStartDate, dayOfWeek, zoneId])
   @@index([userId, weekStartDate, dayOfWeek])
-}
-
-model ShiftSwapRequest {
-  id                String   @id @default(cuid())
-  requesterUserId   String
-  requesterShiftId  String
-  targetShiftId     String
-  status            String   @default("PENDING")
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  requester         User     @relation("SwapRequestRequester", fields: [requesterUserId], references: [id], onDelete: Cascade)
-  requesterShift    Shift    @relation("SwapOfferShift", fields: [requesterShiftId], references: [id], onDelete: Cascade)
-  targetShift       Shift    @relation("SwapTargetShift", fields: [targetShiftId], references: [id], onDelete: Cascade)
-
-  @@index([requesterUserId, status])
-  @@index([targetShiftId, status])
 }
 
 model AppNotification {
@@ -195,6 +176,9 @@ model ShiftReport {
   text               String
   status             String    @default("PENDING_REVIEW")
   accrualAmountCents Int?
+  /// Начисление «за выход» (копейки); вместе с `accrualWorkCents` даёт сумму `accrualAmountCents`.
+  accrualAppearanceCents Int?
+  accrualWorkCents       Int?
   acceptedAt         DateTime?
   acceptedByUserId   String?
   createdAt          DateTime  @default(now())

@@ -1,8 +1,7 @@
 "use client";
 
-import { addDays } from "date-fns";
 import { useRouter } from "next/navigation";
-import { formatDateRu, safeParseISO } from "@/lib/utils";
+import { addAppDays, formatDateRu, safeParseISO } from "@/lib/utils";
 
 /**
  * Режим недели задаёт сервер через `mode`; здесь только навигация.
@@ -20,7 +19,7 @@ export function WeekModeSwitch({
   const router = useRouter();
   const currentStart = safeParseISO(currentWeekStartIso);
   const nextStart = safeParseISO(nextWeekStartIso);
-  const range = (start: Date) => `${formatDateRu(start, "dd.MM")} - ${formatDateRu(addDays(start, 6), "dd.MM")}`;
+  const range = (start: Date) => `${formatDateRu(start, "dd.MM")} - ${formatDateRu(addAppDays(start, 6), "dd.MM")}`;
 
   const setMode = (target: "current" | "next") => {
     if (target === "next") router.push("/schedule?week=next");

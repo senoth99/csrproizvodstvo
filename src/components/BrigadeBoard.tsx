@@ -2,23 +2,17 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { isBefore, startOfDay } from "date-fns";
-import { ArrowLeftRight, Boxes, ChevronDown, Cpu, Flame, Scissors, Shirt, X } from "lucide-react";
-import { createShiftSwapRequest, managerAssignBrigadeShift, managerRemoveShift, toggleBrigadeAssignment } from "@/app/actions";
+import { Boxes, ChevronDown, Cpu, Flame, Scissors, Shirt, X } from "lucide-react";
+import { managerAssignBrigadeShift, managerRemoveShift, toggleBrigadeAssignment } from "@/app/actions";
 import { UserAvatar } from "@/components/UserAvatar";
 import type { BrigadeConfig } from "@/lib/brigades";
-import { formatDateRu, isoFromWeekDay, safeParseISO, weekDays } from "@/lib/utils";
+import { formatDateRu, isBeforeAppDay, isoFromWeekDay, safeParseISO, weekDays } from "@/lib/utils";
 
 export type BrigadeAssignableEmployee = {
   id: string;
   name: string;
   color: string;
   telegramPhotoUrl: string | null;
-};
-
-export type BrigadeSwapOffer = {
-  id: string;
-  summary: string;
 };
 
 type ShiftWithUser = {
@@ -59,9 +53,7 @@ export function BrigadeBoard({
   weekStartDateIso,
   weekMode,
   canManageSchedule = false,
-  assignableEmployees = [],
-  swapOffers = [],
-  canRequestEmployeeSwap = false
+  assignableEmployees = []
 }: {
   brigades: BrigadeConfig[];
   shifts: ShiftWithUser[];
@@ -70,8 +62,6 @@ export function BrigadeBoard({
   weekMode: "current" | "next";
   canManageSchedule?: boolean;
   assignableEmployees?: BrigadeAssignableEmployee[];
-  swapOffers?: BrigadeSwapOffer[];
-  canRequestEmployeeSwap?: boolean;
 }) {
   const [pending, start] = useTransition();
   const router = useRouter();
@@ -79,8 +69,6 @@ export function BrigadeBoard({
   const [openBrigadeId, setOpenBrigadeId] = useState<string | null>(null);
   const [pickCtx, setPickCtx] = useState<PickCtx | null>(null);
   const [removeShift, setRemoveShift] = useState<ShiftWithUser | null>(null);
-  const [swapTargetShift, setSwapTargetShift] = useState<ShiftWithUser | null>(null);
-  const [offerShiftIdForSwap, setOfferShiftIdForSwap] = useState<string>("");
   const [sheetError, setSheetError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -90,19 +78,6 @@ export function BrigadeBoard({
   useEffect(() => {
     if (removeShift) setSheetError(null);
   }, [removeShift]);
-
-  useEffect(() => {
-    if (swapTargetShift) setSheetError(null);
-  }, [swapTargetShift]);
-
-  useEffect(() => {
-    if (!swapTargetShift) {
-      setOfferShiftIdForSwap("");
-      return;
-    }
-    const candidates = swapOffers.filter((o) => o.id !== swapTargetShift.id);
-    setOfferShiftIdForSwap(candidates[0]?.id ?? "");
-  }, [swapTargetShift, swapOffers]);
 
   const weekStartDate = safeParseISO(weekStartDateIso);
   const weekRangeLabel = `${formatDateRu(weekStartDate, "dd.MM")} - ${formatDateRu(
@@ -153,28 +128,6 @@ export function BrigadeBoard({
         router.refresh();
       } catch (e) {
         setSheetError(e instanceof Error ? e.message : "Не удалось снять смену");
-      }
-    });
-  };
-
-  const swapOfferCandidates = useMemo(() => {
-    if (!swapTargetShift) return [];
-    return swapOffers.filter((o) => o.id !== swapTargetShift.id);
-  }, [swapOffers, swapTargetShift]);
-
-  const runSwapRequest = () => {
-    if (!swapTargetShift || pending || !offerShiftIdForSwap) return;
-    start(async () => {
-      try {
-        setSheetError(null);
-        await createShiftSwapRequest({
-          requesterShiftId: offerShiftIdForSwap,
-          targetShiftId: swapTargetShift.id
-        });
-        setSwapTargetShift(null);
-        router.refresh();
-      } catch (e) {
-        setSheetError(e instanceof Error ? e.message : "Не удалось отправить запрос");
       }
     });
   };
@@ -275,7 +228,7 @@ export function BrigadeBoard({
                     const cellShifts = grouped.get(key) ?? [];
                     const mine = cellShifts.some((s) => s.userId === currentUserId);
                     const dayDate = isoFromWeekDay(weekStartDate, d.index);
-                    const isPastDay = isBefore(startOfDay(dayDate), startOfDay(new Date()));
+                    const isPastDay = isBeforeAppDay(dayDate, new Date());
 
                     const openPicker = () => {
                       if (isPastDay || pending) return;
@@ -302,54 +255,11 @@ export function BrigadeBoard({
                         <div className="flex flex-wrap gap-1.5">
                           {cellShifts.length === 0 ? (
                             <span className="text-xs text-muted">
-                              {canRequestEmployeeSwap
-                                ? "Пусто — запишись здесь или нажми на коллегу ниже для обмена."
-                                : canManageSchedule
-                                  ? "Нажмите, чтобы назначить сотрудника"
-                                  : "Пусто — нажми, чтобы записаться"}
+                              {canManageSchedule ? "Нажмите, чтобы назначить сотрудника" : "Пусто — нажми, чтобы записаться"}
                             </span>
                           ) : (
                             cellShifts.map((s) =>
-                              canRequestEmployeeSwap ? (
-                                <button
-                                  key={s.id}
-                                  type="button"
-                                  disabled={pending || isPastDay}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (isPastDay || pending) return;
-                                    if (s.userId === currentUserId) {
-                                      start(async () => {
-                                        await toggleBrigadeAssignment({
-                                          brigadeId: brigade.id,
-                                          dayOfWeek: d.index,
-                                          weekStartDate: weekStartDateIso
-                                        });
-                                      });
-                                    } else {
-                                      setSwapTargetShift(s);
-                                    }
-                                  }}
-                                  className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-1 text-left text-[10px] transition-all duration-200 ease-out ${
-                                    isPastDay
-                                      ? "cursor-not-allowed border-border text-muted opacity-60"
-                                      : s.userId === currentUserId
-                                        ? "min-h-[2.25rem] border-foreground/20 bg-foreground/[0.07] text-foreground hover:bg-foreground/[0.09]"
-                                        : "min-h-[2.25rem] border-muted/35 bg-muted/[0.05] text-muted hover:border-muted/50 hover:text-foreground"
-                                  }`}
-                                >
-                                  <UserAvatar
-                                    name={s.user.name}
-                                    photoUrl={s.user.telegramPhotoUrl}
-                                    color={s.user.color}
-                                    size="sm"
-                                  />
-                                  <span className="truncate font-medium">{s.user.name}</span>
-                                  {s.userId !== currentUserId ? (
-                                    <ArrowLeftRight className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
-                                  ) : null}
-                                </button>
-                              ) : canManageSchedule ? (
+                              canManageSchedule ? (
                                 <button
                                   key={s.id}
                                   type="button"
@@ -399,42 +309,6 @@ export function BrigadeBoard({
                         </div>
                       </>
                     );
-
-                    if (canRequestEmployeeSwap) {
-                      const backdropToggle = () => {
-                        if (isPastDay || pending) return;
-                        start(async () => {
-                          await toggleBrigadeAssignment({
-                            brigadeId: brigade.id,
-                            dayOfWeek: d.index,
-                            weekStartDate: weekStartDateIso
-                          });
-                        });
-                      };
-                      return (
-                        <div
-                          key={`${brigade.id}-${d.index}`}
-                          role="button"
-                          tabIndex={isPastDay || pending ? -1 : 0}
-                          onClick={() => backdropToggle()}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              backdropToggle();
-                            }
-                          }}
-                          className={`w-full rounded-xl border p-2 text-left outline-none transition-all duration-200 ease-out focus-visible:ring-2 focus-visible:ring-foreground/25 ${
-                            isPastDay
-                              ? "cursor-not-allowed border-border bg-muted/[0.04] opacity-55"
-                              : mine
-                                ? "cursor-pointer border-border bg-transparent hover:bg-foreground/[0.05]"
-                                : "cursor-pointer border-border bg-transparent hover:bg-foreground/[0.05]"
-                          }`}
-                        >
-                          {cellBody}
-                        </div>
-                      );
-                    }
 
                     if (canManageSchedule) {
                       return (
@@ -496,101 +370,6 @@ export function BrigadeBoard({
       })}
       {visibleBrigades.length === 0 ? (
         <div className="card text-sm text-muted">На этот режим бригад пока нет.</div>
-      ) : null}
-
-      {swapTargetShift ? (
-        <div
-          className="fixed inset-0 z-[120] flex flex-col justify-end bg-background/85 p-3 pb-[max(0.75rem,var(--safe-bottom))] pt-10 backdrop-blur-[2px] sm:items-center sm:justify-center sm:p-6"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="swap-shift-title"
-        >
-          <button
-            type="button"
-            className="absolute inset-0 cursor-default"
-            aria-label="Закрыть"
-            onClick={() => setSwapTargetShift(null)}
-          />
-          <div className="relative z-[1] w-full max-w-md overflow-hidden rounded-lg border border-border bg-background animate-in">
-            <div className="flex items-start justify-between gap-2 border-b border-border px-4 py-3">
-              <div className="min-w-0">
-                <h3 id="swap-shift-title" className="flex items-center gap-2 text-base font-medium tracking-tight">
-                  <ArrowLeftRight className="h-5 w-5 text-muted" aria-hidden />
-                  Запросить обмен сменами
-                </h3>
-                <p className="mt-1 text-xs leading-relaxed text-muted">
-                  Вы хотите занять место коллеги в ячейке{" "}
-                  <span className="font-semibold text-foreground/95">
-                    {swapTargetShift.zoneName}, {swapTargetShift.startTime}–{swapTargetShift.endTime}
-                  </span>
-                  .
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSwapTargetShift(null)}
-                className="-mr-1 -mt-1 rounded-full p-2 text-muted transition-colors hover:bg-surface hover:text-foreground"
-                aria-label="Закрыть"
-              >
-                <X className="h-5 w-5 text-muted" aria-hidden />
-              </button>
-            </div>
-            <div className="space-y-2 px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">Ваша смена в обмен</p>
-              {swapOfferCandidates.length === 0 ? (
-                <p className="text-sm leading-relaxed text-muted">
-                  У вас пока нет своей записи на эту неделю. Сначала запишитесь на любую смену на этой же неделе — тогда можно
-                  запросить обмен.
-                </p>
-              ) : (
-                <ul className="max-h-[40vh] space-y-1 overflow-y-auto pr-1">
-                  {swapOfferCandidates.map((o) => (
-                    <li key={o.id}>
-                      <label className="flex min-h-11 cursor-pointer touch-manipulation items-start gap-2 rounded-xl border border-border bg-transparent px-3 py-2.5 hover:bg-foreground/[0.05]">
-                        <input
-                          type="radio"
-                          name="swap-offer-shift"
-                          className="mt-1"
-                          checked={offerShiftIdForSwap === o.id}
-                          onChange={() => setOfferShiftIdForSwap(o.id)}
-                        />
-                        <span className="text-sm leading-snug text-foreground/95">{o.summary}</span>
-                      </label>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            <div className="flex gap-2 border-t border-border/80 px-4 py-4">
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() => setSwapTargetShift(null)}
-                className="btn-secondary flex-1 py-2.5 text-sm disabled:opacity-50"
-              >
-                Отмена
-              </button>
-              <button
-                type="button"
-                disabled={
-                  pending ||
-                  swapOfferCandidates.length === 0 ||
-                  !offerShiftIdForSwap ||
-                  !swapOfferCandidates.some((o) => o.id === offerShiftIdForSwap)
-                }
-                onClick={runSwapRequest}
-                className="btn-primary flex-1 py-2.5 text-sm disabled:opacity-50"
-              >
-                {pending ? "…" : "Отправить запрос"}
-              </button>
-            </div>
-            {sheetError ? (
-              <p className="border-t border-border bg-muted/[0.04] px-4 py-2 text-center text-[12px] font-medium text-foreground/85">
-                {sheetError}
-              </p>
-            ) : null}
-          </div>
-        </div>
       ) : null}
 
       {pickCtx ? (

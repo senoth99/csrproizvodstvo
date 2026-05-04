@@ -79,17 +79,19 @@ export default async function MePage() {
                 reportStatus: s.report?.status ?? null
               }))
               .filter((row) => !shiftInCabinetArchive(row))}
-            allShifts={allShifts.map((s) => ({
-              id: s.id,
-              dayOfWeek: s.dayOfWeek,
-              weekStartDateIso: s.weekStartDate.toISOString(),
-              startTime: s.startTime,
-              endTime: s.endTime,
-              status: s.status,
-              zoneName: s.zone.name,
-              hasReport: Boolean(s.report),
-              reportStatus: s.report?.status ?? null
-            }))}
+            archiveShifts={allShifts
+              .map((s) => ({
+                id: s.id,
+                dayOfWeek: s.dayOfWeek,
+                weekStartDateIso: s.weekStartDate.toISOString(),
+                startTime: s.startTime,
+                endTime: s.endTime,
+                status: s.status,
+                zoneName: s.zone.name,
+                hasReport: Boolean(s.report),
+                reportStatus: s.report?.status ?? null
+              }))
+              .filter(shiftInCabinetArchive)}
           />
         </div>
       </div>

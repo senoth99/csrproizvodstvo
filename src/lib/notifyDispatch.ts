@@ -1,6 +1,23 @@
 import { prisma } from "@/lib/prisma";
 import { telegramSendMessage } from "@/lib/telegramBotHelpers";
 
+/** Максимум записей в колокольчике на одного пользователя; более старые удаляются. */
+export const MAX_APP_NOTIFICATIONS_PER_USER = 10;
+
+/** Удаляет уведомления пользователя старее N самых новых (по `createdAt`). */
+export async function trimAppNotificationsForUser(userId: string) {
+  const excess = await prisma.appNotification.findMany({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+    skip: MAX_APP_NOTIFICATIONS_PER_USER,
+    select: { id: true }
+  });
+  if (!excess.length) return;
+  await prisma.appNotification.deleteMany({
+    where: { id: { in: excess.map((r) => r.id) } }
+  });
+}
+
 /** Запись в колокольчике приложения (без Telegram). */
 export async function insertAppNotification(input: {
   userId: string;
@@ -11,14 +28,27 @@ export async function insertAppNotification(input: {
   swapRequestId?: string | null;
 }) {
   try {
-    await prisma.appNotification.create({
-      data: {
-        userId: input.userId,
-        type: input.type,
-        title: input.title,
-        body: input.body,
-        payload: input.payload != null ? JSON.stringify(input.payload) : null,
-        swapRequestId: input.swapRequestId ?? null
+    await prisma.$transaction(async (tx) => {
+      await tx.appNotification.create({
+        data: {
+          userId: input.userId,
+          type: input.type,
+          title: input.title,
+          body: input.body,
+          payload: input.payload != null ? JSON.stringify(input.payload) : null,
+          swapRequestId: input.swapRequestId ?? null
+        }
+      });
+      const excess = await tx.appNotification.findMany({
+        where: { userId: input.userId },
+        orderBy: { createdAt: "desc" },
+        skip: MAX_APP_NOTIFICATIONS_PER_USER,
+        select: { id: true }
+      });
+      if (excess.length) {
+        await tx.appNotification.deleteMany({
+          where: { id: { in: excess.map((r) => r.id) } }
+        });
       }
     });
   } catch (e) {

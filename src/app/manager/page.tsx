@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { getISODay } from "date-fns";
 import { ChevronRight, HandCoins, Users } from "lucide-react";
 import { redirect } from "next/navigation";
 import { ManagerTodayBrigades } from "@/components/ManagerTodayBrigades";
@@ -10,7 +9,7 @@ import { catchDb } from "@/lib/dbBoundary";
 import { ShiftStatus } from "@/lib/enums";
 import { prisma } from "@/lib/prisma";
 import { prismaUserShiftBoardSelect } from "@/lib/prismaSafeUserInclude";
-import { formatDateRu, getWeekStart, weekDays } from "@/lib/utils";
+import { formatDateRu, getAppISODay, getWeekStart, weekDays } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +19,7 @@ export default async function ManagerPanelPage() {
 
   const today = new Date();
   const weekStart = getWeekStart(today);
-  const dayOfWeek = getISODay(today);
+  const dayOfWeek = getAppISODay(today);
   const weekdayLabel = weekDays.find((d) => d.index === dayOfWeek)?.name ?? "Сегодня";
   const dateLabel = formatDateRu(today, "dd.MM.yyyy");
 

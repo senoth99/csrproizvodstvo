@@ -17,6 +17,7 @@ RUN npx prisma generate && npm run build
 FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+ENV TZ=Europe/Moscow
 ENV NEXT_TELEMETRY_DISABLED=1
 # Prisma engine на Alpine (OpenSSL 3 — базовые библиотеки)
 RUN apk add --no-cache openssl libc6-compat

@@ -10,8 +10,6 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Bell } from "lucide-react";
-import { respondShiftSwapRequestAction } from "@/app/actions";
-import { AppNotificationType } from "@/lib/enums";
 import { formatDateRu } from "@/lib/utils";
 
 export type NotificationRow = {
@@ -55,7 +53,7 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<NotificationRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [isPending, start] = useTransition();
+  const [, start] = useTransition();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [coords, setCoords] = useState<PanelCoords | null>(null);
@@ -151,19 +149,6 @@ export function NotificationBell() {
     setOpen(true);
   };
 
-  const respond = (swapRequestId: string, accept: boolean) => {
-    start(async () => {
-      try {
-        setActionError(null);
-        const res = await respondShiftSwapRequestAction({ swapRequestId, accept });
-        if (!res.ok) setActionError(res.message);
-        await load();
-      } catch (e) {
-        setActionError(e instanceof Error ? e.message : "Не удалось обработать");
-      }
-    });
-  };
-
   const markAllRead = () => {
     start(async () => {
       try {
@@ -254,8 +239,6 @@ export function NotificationBell() {
                 const iso = typeof n.createdAt === "string" ? n.createdAt : String(n.createdAt);
                 const d = new Date(iso);
                 const created = Number.isFinite(d.getTime()) ? formatDateRu(d, "dd.MM.yy HH:mm") : "";
-                const isIncomingSwap =
-                  Boolean(n.swapRequestId) && n.type === AppNotificationType.SHIFT_SWAP_INCOMING && n.readAt === null;
                 const showDot = n.readAt === null || (recentlyReadUntil[n.id] ?? 0) > Date.now();
                 /* Сломать data detection в WebView: невидимый ZWSP после «, » */
                 const bodyPlain = n.body.replace(/, /g, ",\u200B ");
@@ -277,26 +260,6 @@ export function NotificationBell() {
                     <p className="notification-plain-text mt-1 whitespace-pre-wrap text-[12px] leading-snug text-muted">
                       {bodyPlain}
                     </p>
-                    {isIncomingSwap ? (
-                      <div className="mt-2 flex gap-2">
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() => n.swapRequestId && respond(n.swapRequestId, true)}
-                          className="flex-1 rounded-lg bg-foreground px-2 py-2 text-[11px] font-medium text-background hover:bg-foreground/90 disabled:opacity-45"
-                        >
-                          Принять
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() => n.swapRequestId && respond(n.swapRequestId, false)}
-                          className="flex-1 rounded-lg border border-border px-2 py-2 text-[11px] font-medium hover:bg-foreground/[0.06] disabled:opacity-45"
-                        >
-                          Отклонить
-                        </button>
-                      </div>
-                    ) : null}
                   </li>
                 );
               })}

@@ -30,6 +30,8 @@ type UserRow = {
   name: string;
   isActive: boolean;
   isManager: boolean;
+  photoUrl?: string | null;
+  color?: string | null;
 };
 
 type SuperAdminFallback = {
@@ -49,16 +51,23 @@ type MergedRow = {
   firstName: string;
   lastName: string;
   accessRowId?: string;
+  photoUrl?: string | null;
+  color?: string | null;
 };
 
 export function TelegramAccessForm({
   rows,
   users,
-  superAdminFallback
+  superAdminFallback,
+  variant,
+  telegramSuperUsername
 }: {
   rows: AllowedRow[];
   users: UserRow[];
   superAdminFallback: SuperAdminFallback | null;
+  variant: "admin" | "manager";
+  /** Нормализованный username суперадмина из TELEGRAM_ADMIN_USERNAME (без @), может быть пустым */
+  telegramSuperUsername: string;
 }) {
   const [username, setUsername] = useState("");
   const [inviteAsManager, setInviteAsManager] = useState(false);
@@ -70,7 +79,6 @@ export function TelegramAccessForm({
   const [error, setError] = useState("");
   const [managerToggleError, setManagerToggleError] = useState("");
   const router = useRouter();
-  const superAdminUsername = "contact_voropaev";
 
   useEffect(() => {
     if (selected) {
@@ -92,7 +100,9 @@ export function TelegramAccessForm({
         firstName: u.firstName,
         lastName: u.lastName,
         accessRowId: undefined,
-        isManager: u.isManager
+        isManager: u.isManager,
+        photoUrl: u.photoUrl ?? null,
+        color: u.color ?? null
       });
     }
     for (const r of rows) {
@@ -106,7 +116,9 @@ export function TelegramAccessForm({
         firstName: existing?.firstName ?? "",
         lastName: existing?.lastName ?? "",
         accessRowId: r.id,
-        isManager: r.isManager ?? existing?.isManager ?? false
+        isManager: r.isManager ?? existing?.isManager ?? false,
+        photoUrl: existing?.photoUrl ?? null,
+        color: existing?.color ?? null
       });
     }
     const list = Array.from(map.values()).sort((a, b) => {
@@ -114,23 +126,30 @@ export function TelegramAccessForm({
       if (b.role === UserRole.SUPER_ADMIN) return 1;
       return a.username.localeCompare(b.username);
     });
-    if (!list.some((u) => u.username === superAdminUsername)) {
+    if (
+      variant === "admin" &&
+      telegramSuperUsername &&
+      !list.some((u) => u.username === telegramSuperUsername)
+    ) {
       list.unshift({
-        username: superAdminUsername,
+        username: telegramSuperUsername,
         role: UserRole.SUPER_ADMIN,
         isActive: true,
         userId: superAdminFallback?.id,
-        name: superAdminFallback?.name ?? "@contact_voropaev",
+        name: superAdminFallback?.name ?? `@${telegramSuperUsername}`,
         firstName: superAdminFallback?.firstName ?? "",
         lastName: superAdminFallback?.lastName ?? "",
-        isManager: false
+        isManager: false,
+        photoUrl: null,
+        color: null
       });
     }
     return list;
   })();
 
   const trimmedInvite = username.trim().toLowerCase().replace(/^@/, "");
-  const isInvitingSuperAdmin = trimmedInvite === superAdminUsername;
+  const isInvitingSuperAdmin =
+    variant === "admin" && Boolean(telegramSuperUsername) && trimmedInvite === telegramSuperUsername;
 
   return (
     <div className="space-y-3">
@@ -147,13 +166,19 @@ export function TelegramAccessForm({
               });
               setUsername("");
               setInviteAsManager(false);
+              router.refresh();
             } catch (err) {
               setError(err instanceof Error ? err.message : "Ошибка сохранения");
             }
           });
         }}
       >
-        <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="@username" />
+        <input
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          placeholder="@username"
+          className="min-h-11 rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+        />
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-end">
           <label className="flex cursor-pointer items-center gap-2 text-sm text-muted md:mr-auto md:justify-start">
             <input
@@ -176,7 +201,7 @@ export function TelegramAccessForm({
         {merged.map((row) => (
           <div key={row.username} className="card flex w-full items-center justify-between gap-2 text-left">
             <div className="flex min-w-0 items-center gap-2">
-              <UserAvatar name={row.name} size="md" />
+              <UserAvatar name={row.name} photoUrl={row.photoUrl} color={row.color} size="md" />
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2 font-semibold">
                   <span className="truncate">{row.name}</span>
@@ -209,7 +234,7 @@ export function TelegramAccessForm({
                   pending ||
                   !row.accessRowId ||
                   row.role === UserRole.SUPER_ADMIN ||
-                  row.username === superAdminUsername
+                  (Boolean(telegramSuperUsername) && row.username === telegramSuperUsername)
                 }
                 title="Отозвать доступ"
                 aria-label={`Отозвать доступ @${row.username}`}
@@ -217,7 +242,7 @@ export function TelegramAccessForm({
                   if (
                     !row.accessRowId ||
                     row.role === UserRole.SUPER_ADMIN ||
-                    row.username === superAdminUsername
+                    (Boolean(telegramSuperUsername) && row.username === telegramSuperUsername)
                   ) {
                     return;
                   }
@@ -269,7 +294,7 @@ export function TelegramAccessForm({
                 disabled={
                   pending ||
                   selected.role === UserRole.SUPER_ADMIN ||
-                  selected.username === superAdminUsername ||
+                  (Boolean(telegramSuperUsername) && selected.username === telegramSuperUsername) ||
                   !selected.accessRowId
                 }
                 onChange={(e) => {
@@ -279,9 +304,13 @@ export function TelegramAccessForm({
                   start(async () => {
                     try {
                       if (!selected.accessRowId) return;
-                      if (selected.username === superAdminUsername || selected.role === UserRole.SUPER_ADMIN)
+                      if (
+                        (Boolean(telegramSuperUsername) && selected.username === telegramSuperUsername) ||
+                        selected.role === UserRole.SUPER_ADMIN
+                      )
                         return;
                       await adminSetTelegramUserManager({ username: selected.username, isManager: v });
+                      router.refresh();
                     } catch (err) {
                       setEditIsManager(!v);
                       setManagerToggleError(err instanceof Error ? err.message : "Ошибка");
@@ -292,7 +321,7 @@ export function TelegramAccessForm({
               <span>Панель руководителя (роль руководителя)</span>
             </label>
             {!selected.accessRowId &&
-            selected.username !== superAdminUsername &&
+            !(Boolean(telegramSuperUsername) && selected.username === telegramSuperUsername) &&
             selected.role !== UserRole.SUPER_ADMIN ? (
               <p className="mt-2 text-[11px] text-muted">
                 Чтобы включить флаг, пользователь должен быть в списке доступа (добавьте @username основной формой).
@@ -311,12 +340,17 @@ export function TelegramAccessForm({
                 onClick={() =>
                   start(async () => {
                     if (!selected.userId) return;
-                    await adminUpdateUserProfile({
-                      userId: selected.userId,
-                      firstName: editFirstName,
-                      lastName: editLastName
-                    });
-                    setSelected(null);
+                    try {
+                      await adminUpdateUserProfile({
+                        userId: selected.userId,
+                        firstName: editFirstName,
+                        lastName: editLastName
+                      });
+                      setSelected(null);
+                      router.refresh();
+                    } catch (err) {
+                      setManagerToggleError(err instanceof Error ? err.message : "Ошибка сохранения");
+                    }
                   })
                 }
               >
@@ -328,21 +362,24 @@ export function TelegramAccessForm({
                   disabled={
                     pending ||
                     selected.role === UserRole.SUPER_ADMIN ||
-                    selected.username === superAdminUsername
+                    (Boolean(telegramSuperUsername) && selected.username === telegramSuperUsername)
                   }
                   onClick={() =>
                     start(async () => {
-                      if (selected.role === UserRole.SUPER_ADMIN || selected.username === superAdminUsername)
+                      if (selected.role === UserRole.SUPER_ADMIN || (telegramSuperUsername && selected.username === telegramSuperUsername))
                         return;
                       await revokeTelegramAccessByUsername(selected.username);
                       setSelected(null);
+                      router.refresh();
                     })
                   }
                 >
                   Отозвать доступ
                 </button>
               ) : null}
-              {selected.username !== superAdminUsername && selected.role !== UserRole.SUPER_ADMIN ? (
+              {variant === "admin" &&
+              !(Boolean(telegramSuperUsername) && selected.username === telegramSuperUsername) &&
+              selected.role !== UserRole.SUPER_ADMIN ? (
                 <button
                   className="btn-secondary border-muted/45 text-muted"
                   disabled={pending}
@@ -350,6 +387,7 @@ export function TelegramAccessForm({
                     start(async () => {
                       await deleteEmployeeByUsername(selected.username);
                       setSelected(null);
+                      router.refresh();
                     })
                   }
                 >

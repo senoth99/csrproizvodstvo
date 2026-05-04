@@ -1,11 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { addDays, isSameDay } from "date-fns";
 import { CalendarDays, Clock3, History, X, Wrench } from "lucide-react";
 import { CompleteShiftReportDialog } from "@/components/CompleteShiftReportDialog";
 import { ShiftReportStatus, ShiftStatus } from "@/lib/enums";
-import { formatDateRu, isoFromWeekDay, safeParseISO, weekDays } from "@/lib/utils";
+import {
+  addAppDays,
+  formatDateRu,
+  isSameAppDay,
+  isoFromWeekDay,
+  safeParseISO,
+  startOfAppDay,
+  weekDays
+} from "@/lib/utils";
 
 type ShiftItem = {
   id: string;
@@ -21,22 +28,23 @@ type ShiftItem = {
 
 export function MyShiftsSection({
   weekShifts,
-  allShifts,
+  archiveShifts,
   scheduledInWeekRangeCount
 }: {
   weekShifts: ShiftItem[];
-  allShifts: ShiftItem[];
+  /** Только смены, по которым уже отправлен отчёт (на проверке или принят). */
+  archiveShifts: ShiftItem[];
   /** Смен в выбранном диапазоне до фильтра «в архив после отчёта» — для текста пустого списка */
   scheduledInWeekRangeCount: number;
 }) {
   const [showArchive, setShowArchive] = useState(false);
   const now = new Date();
-  const tomorrow = addDays(now, 1);
+  const tomorrowStart = addAppDays(startOfAppDay(now), 1);
 
   const renderShiftCard = (s: ShiftItem) => {
     const shiftDay = isoFromWeekDay(safeParseISO(s.weekStartDateIso), s.dayOfWeek);
-    const isToday = isSameDay(shiftDay, now);
-    const isTomorrow = isSameDay(shiftDay, tomorrow);
+    const isToday = isSameAppDay(shiftDay, now);
+    const isTomorrow = isSameAppDay(shiftDay, tomorrowStart);
     const dayBadge = isToday ? "Сегодня" : isTomorrow ? "Завтра" : null;
 
     const reportPending =
@@ -160,10 +168,12 @@ export function MyShiftsSection({
               </button>
             </div>
             <div className="space-y-2 overflow-y-auto px-3 py-3 md:px-4 md:py-4">
-              {allShifts.length === 0 ? (
-                <div className="card text-sm text-muted">Смен пока нет.</div>
+              {archiveShifts.length === 0 ? (
+                <div className="card text-sm text-muted">
+                  Здесь появятся смены после того, как вы отправите по ним отчёт.
+                </div>
               ) : (
-                allShifts.map((s) => renderShiftCard(s))
+                archiveShifts.map((s) => renderShiftCard(s))
               )}
             </div>
           </div>

@@ -1,7 +1,7 @@
 "use server";
 
 import { Prisma } from "@prisma/client";
-import { addHours, isBefore, isSameDay, parseISO } from "date-fns";
+import { addHours, isBefore, parseISO } from "date-fns";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import {
@@ -22,19 +22,26 @@ import {
   ShiftReportStatus,
   ShiftSource,
   ShiftStatus,
-  ShiftSwapStatus,
   UserRole
 } from "@/lib/enums";
 import { canOpenManagerPanel } from "@/lib/managerPanel";
-import { insertAppNotification, notifyUserAppAndTelegram } from "@/lib/notifyDispatch";
-import { describeShiftBrief, notifyTelegramIncomingSwap, respondToShiftSwapRequest } from "@/lib/shiftSwapCore";
-import {
-  prismaUserListNameSelect,
-  prismaUserShiftBoardSelect,
-  prismaUserSwapTargetSelect
-} from "@/lib/prismaSafeUserInclude";
-import { isoFromWeekDay } from "@/lib/utils";
+import { notifyUserAppAndTelegram } from "@/lib/notifyDispatch";
+import { describeShiftBrief } from "@/lib/shiftBrief";
+import { prismaUserListNameSelect, prismaUserShiftBoardSelect } from "@/lib/prismaSafeUserInclude";
+import { isSameAppDay, isoFromWeekDay } from "@/lib/utils";
 import { z } from "zod";
+
+function normalizedTelegramSuperAdminUsername(): string {
+  return (process.env.TELEGRAM_ADMIN_USERNAME ?? "").trim().toLowerCase().replace(/^@/, "");
+}
+
+async function requireSuperAdminOrManagerForTelegramAccess() {
+  const actor = await requireAuth();
+  if (actor.role === UserRole.SUPER_ADMIN || canOpenManagerPanel(actor)) {
+    return { actor, isSuper: actor.role === UserRole.SUPER_ADMIN };
+  }
+  throw new Error("Недостаточно прав.");
+}
 
 const managerBrigadeAssignSchema = z.object({
   brigadeId: z.string(),
@@ -48,20 +55,21 @@ const updateEmployeeNdaSignedSchema = z.object({
   ndaSigned: z.boolean()
 });
 
-const shiftSwapCreateSchema = z.object({
-  requesterShiftId: z.string(),
-  targetShiftId: z.string()
-});
-
 const managerRecordPayoutSchema = z.object({
   userId: z.string().cuid(),
   amountRub: z.coerce.number().finite().positive("Сумма выплаты должна быть больше нуля")
 });
 
-const acceptShiftReportSchema = z.object({
-  reportId: z.string().cuid(),
-  amountRub: z.coerce.number().finite().positive("Укажите сумму начисления больше нуля")
-});
+const acceptShiftReportSchema = z
+  .object({
+    reportId: z.string().cuid(),
+    amountAppearanceRub: z.coerce.number().finite().min(0),
+    amountWorkRub: z.coerce.number().finite().min(0)
+  })
+  .refine((d) => d.amountAppearanceRub + d.amountWorkRub > 0, {
+    message: "Сумма начисления должна быть больше нуля (заполните одну или обе суммы).",
+    path: ["amountAppearanceRub"]
+  });
 
 function userIsReportAdmin(actor: { role: string }) {
   return actor.role === UserRole.ADMIN || actor.role === UserRole.SUPER_ADMIN;
@@ -566,127 +574,6 @@ export async function managerRecordAccrual(input: unknown) {
   revalidatePath("/me/balance");
 }
 
-export async function createShiftSwapRequest(input: unknown) {
-  const actor = await requireAuth();
-  if (actor.role !== UserRole.EMPLOYEE) {
-    throw new Error("Обмен через график доступен только сотрудникам.");
-  }
-
-  const data = shiftSwapCreateSchema.parse(input);
-  if (data.requesterShiftId === data.targetShiftId) throw new Error("Выберите разные записи.");
-
-  const offer = await prisma.shift.findUnique({
-    where: { id: data.requesterShiftId },
-    include: { zone: true, report: true, timeLog: true }
-  });
-  const target = await prisma.shift.findUnique({
-    where: { id: data.targetShiftId },
-    include: {
-      zone: true,
-      report: true,
-      timeLog: true,
-      user: { select: prismaUserSwapTargetSelect }
-    }
-  });
-
-  if (!offer || !target) throw new Error("Смена не найдена.");
-  if (offer.userId !== actor.id) throw new Error("В обмен можно предложить только свою смену.");
-  if (target.userId === actor.id) throw new Error("Нельзя запросить обмен самому себе.");
-
-  if (offer.status !== ShiftStatus.PLANNED || target.status !== ShiftStatus.PLANNED) {
-    throw new Error("Обмен возможен только для запланированных смен.");
-  }
-  if (offer.report || target.report || offer.timeLog?.startedAt || target.timeLog?.startedAt) {
-    throw new Error("Обмен недоступен: смена уже с отчётом или активным учётом времени.");
-  }
-
-  if (offer.weekStartDate.getTime() !== target.weekStartDate.getTime()) {
-    throw new Error("Обмен только внутри одной недели.");
-  }
-
-  const offerStart = toDateTime(offer.weekStartDate, offer.dayOfWeek, offer.startTime);
-  await assertCanEditBy24h(actor.role, offerStart);
-
-  const conflicting = await prisma.shiftSwapRequest.findFirst({
-    where: {
-      targetShiftId: data.targetShiftId,
-      status: ShiftSwapStatus.PENDING
-    }
-  });
-  if (conflicting) throw new Error("По этой смене уже есть ожидающий запрос. Попробуйте позже.");
-
-  const dup = await prisma.shiftSwapRequest.findFirst({
-    where: {
-      status: ShiftSwapStatus.PENDING,
-      requesterUserId: actor.id,
-      targetShiftId: data.targetShiftId,
-      requesterShiftId: data.requesterShiftId
-    }
-  });
-  if (dup) throw new Error("Такой запрос уже отправлен.");
-
-  const row = await prisma.shiftSwapRequest.create({
-    data: {
-      requesterUserId: actor.id,
-      requesterShiftId: data.requesterShiftId,
-      targetShiftId: data.targetShiftId,
-      status: ShiftSwapStatus.PENDING
-    }
-  });
-
-  const offerBrief = describeShiftBrief(offer);
-  const targetBrief = describeShiftBrief(target);
-
-  await insertAppNotification({
-    userId: target.userId,
-    type: AppNotificationType.SHIFT_SWAP_INCOMING,
-    title: "Запрос на обмен сменами",
-    body: `${actor.name} хочет обменять: вы отдаёте (${targetBrief}), забираете (${offerBrief}).`,
-    swapRequestId: row.id,
-    payload: { swapRequestId: row.id, kind: "incoming" }
-  });
-
-  await notifyTelegramIncomingSwap({
-    responderTelegramId: target.user.telegramId,
-    requestId: row.id,
-    requesterName: actor.name,
-    offerLabel: offerBrief,
-    targetLabel: targetBrief
-  });
-
-  await writeAuditLog({
-    actorUserId: actor.id,
-    action: "SHIFT_SWAP_REQUEST",
-    entityType: "ShiftSwapRequest",
-    entityId: row.id,
-    payload: data
-  });
-  revalidatePath("/schedule");
-  revalidatePath("/");
-}
-
-export type RespondShiftSwapResult = { ok: true } | { ok: false; message: string };
-
-export async function respondShiftSwapRequestAction(input: unknown): Promise<RespondShiftSwapResult> {
-  const actor = await requireAuth();
-  const parsed = z
-    .object({
-      swapRequestId: z.string(),
-      accept: z.boolean()
-    })
-    .safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, message: "Некорректные данные запроса." };
-  }
-  const result = await respondToShiftSwapRequest(
-    parsed.data.swapRequestId,
-    parsed.data.accept,
-    actor.id
-  );
-  if (!result.ok) return { ok: false, message: result.message };
-  return { ok: true };
-}
-
 export async function updateShift(input: unknown, forceOverride = false) {
   const actor = await requireAuth();
   const parsed = updateShiftSchema.parse(input);
@@ -763,7 +650,7 @@ export async function submitShiftReport(input: unknown) {
   if (shift.userId !== user.id) throw new Error("Можно отправлять отчет только по своей смене.");
   if (shift.status === ShiftStatus.CANCELLED) throw new Error("Смена отменена, отчёт недоступен.");
   const shiftDay = isoFromWeekDay(shift.weekStartDate, shift.dayOfWeek);
-  if (!isSameDay(shiftDay, new Date())) throw new Error("Отчёт можно отправить только в день смены.");
+  if (!isSameAppDay(shiftDay, new Date())) throw new Error("Отчёт можно отправить только в день смены.");
   if (shift.report?.status === ShiftReportStatus.ACCEPTED) throw new Error("Отчёт уже принят.");
 
   const { reportIdForPath } = await prisma.$transaction(async (tx) => {
@@ -811,7 +698,9 @@ export async function acceptShiftReportWithAccrual(input: unknown) {
   if (!userIsReportAdmin(actor)) throw new Error("Только администратор может принять отчёт.");
 
   const data = acceptShiftReportSchema.parse(input);
-  const amountCents = Math.round(data.amountRub * 100);
+  const appearanceCents = Math.round(data.amountAppearanceRub * 100);
+  const workCents = Math.round(data.amountWorkRub * 100);
+  const amountCents = appearanceCents + workCents;
   if (amountCents <= 0) throw new Error("Некорректная сумма.");
 
   const ledger = await prisma.$transaction(async (tx) => {
@@ -841,6 +730,8 @@ export async function acceptShiftReportWithAccrual(input: unknown) {
       data: {
         status: ShiftReportStatus.ACCEPTED,
         accrualAmountCents: amountCents,
+        accrualAppearanceCents: appearanceCents,
+        accrualWorkCents: workCents,
         acceptedAt: new Date(),
         acceptedByUserId: actor.id
       }
@@ -861,7 +752,9 @@ export async function acceptShiftReportWithAccrual(input: unknown) {
     entityType: "User",
     entityId: ledger.userId,
     payload: {
-      amountRub: data.amountRub,
+      amountRub: amountCents / 100,
+      amountAppearanceRub: data.amountAppearanceRub,
+      amountWorkRub: data.amountWorkRub,
       prevDebtCents: ledger.prevDebtCents,
       nextDebtCents: ledger.nextDebtCents,
       shiftReportId: ledger.reportId,
@@ -873,7 +766,12 @@ export async function acceptShiftReportWithAccrual(input: unknown) {
     action: "ACCEPT_SHIFT_REPORT",
     entityType: "ShiftReport",
     entityId: ledger.reportId,
-    payload: { amountRub: data.amountRub, userId: ledger.userId }
+    payload: {
+      amountRub: amountCents / 100,
+      amountAppearanceRub: data.amountAppearanceRub,
+      amountWorkRub: data.amountWorkRub,
+      userId: ledger.userId
+    }
   });
 
   revalidatePath("/reports");
@@ -896,6 +794,8 @@ export async function getWeekSchedule(weekStartDateIso?: string) {
   });
 }
 
+const MAX_REPORTS_IN_LIST = 50;
+
 export async function getReports() {
   const user = await requireAuth();
   const isAdmin = userIsReportAdmin(user);
@@ -906,7 +806,8 @@ export async function getReports() {
       shift: { include: { zone: true } },
       acceptedBy: { select: prismaUserListNameSelect }
     },
-    orderBy: { createdAt: "desc" }
+    orderBy: { createdAt: "desc" },
+    take: MAX_REPORTS_IN_LIST
   });
 }
 
@@ -972,7 +873,7 @@ export async function completeWelcomeProfile(input: unknown) {
 }
 
 export async function addAllowedTelegramUser(input: unknown) {
-  const actor = await requireRole([UserRole.SUPER_ADMIN]);
+  const { actor, isSuper } = await requireSuperAdminOrManagerForTelegramAccess();
   const schema = z.object({
     username: z
       .string()
@@ -983,8 +884,12 @@ export async function addAllowedTelegramUser(input: unknown) {
     isManager: z.boolean().optional().default(false)
   });
   const data = schema.parse(input);
-  const superAdminUsername = (process.env.TELEGRAM_ADMIN_USERNAME ?? "").trim().toLowerCase().replace(/^@/, "");
-  const role = data.username === superAdminUsername ? UserRole.SUPER_ADMIN : UserRole.EMPLOYEE;
+  const superAdminUsername = normalizedTelegramSuperAdminUsername();
+  if (!isSuper && superAdminUsername && data.username === superAdminUsername) {
+    throw new Error("Этот логин недоступен для добавления из панели сотрудников.");
+  }
+  const role =
+    isSuper && superAdminUsername && data.username === superAdminUsername ? UserRole.SUPER_ADMIN : UserRole.EMPLOYEE;
   const managerFlag = role === UserRole.SUPER_ADMIN ? false : Boolean(data.isManager);
   if (role === UserRole.SUPER_ADMIN) {
     const existingSuperAdmin = await prisma.allowedTelegramUser.findFirst({
@@ -1030,12 +935,12 @@ export async function addAllowedTelegramUser(input: unknown) {
     entityId: row.id,
     payload: { ...data, role, isManager: managerFlag }
   });
-  revalidatePath("/admin/access");
+  revalidatePath("/manager/employees");
   revalidatePath("/manager");
 }
 
 export async function adminSetTelegramUserManager(input: unknown) {
-  const actor = await requireRole([UserRole.SUPER_ADMIN]);
+  const { actor, isSuper } = await requireSuperAdminOrManagerForTelegramAccess();
   const schema = z.object({
     username: z
       .string()
@@ -1045,12 +950,15 @@ export async function adminSetTelegramUserManager(input: unknown) {
     isManager: z.boolean()
   });
   const data = schema.parse(input);
-  const superAdminUsername = (process.env.TELEGRAM_ADMIN_USERNAME ?? "").trim().toLowerCase().replace(/^@/, "");
+  const superAdminUsername = normalizedTelegramSuperAdminUsername();
   if (data.username === superAdminUsername) throw new Error("Флаг не нужен для суперадмина.");
   const allow = await prisma.allowedTelegramUser.findFirst({
     where: { username: data.username }
   });
   if (!allow) throw new Error("Запись доступа для этого username не найдена — добавьте пользователя снова.");
+  if (!isSuper && allow.role !== UserRole.EMPLOYEE) {
+    throw new Error("Недостаточно прав.");
+  }
   await prisma.allowedTelegramUser.updateMany({
     where: { username: data.username },
     data: { isManager: data.isManager }
@@ -1066,7 +974,7 @@ export async function adminSetTelegramUserManager(input: unknown) {
     entityId: data.username,
     payload: data
   });
-  revalidatePath("/admin/access");
+  revalidatePath("/manager/employees");
   revalidatePath("/manager");
 }
 
@@ -1079,17 +987,26 @@ export async function toggleAllowedTelegramUser(id: string, active: boolean) {
     entityType: "AllowedTelegramUser",
     entityId: id
   });
-  revalidatePath("/admin/access");
+  revalidatePath("/manager/employees");
 }
 
 export async function adminUpdateUserProfile(input: unknown) {
-  const actor = await requireRole([UserRole.SUPER_ADMIN]);
+  const { actor, isSuper } = await requireSuperAdminOrManagerForTelegramAccess();
   const schema = z.object({
     userId: z.string().cuid(),
     firstName: z.string().trim().min(2, "Имя минимум 2 символа"),
     lastName: z.string().trim().min(2, "Фамилия минимум 2 символа")
   });
   const data = schema.parse(input);
+  if (!isSuper) {
+    const target = await prisma.user.findUnique({
+      where: { id: data.userId },
+      select: { role: true }
+    });
+    if (!target || target.role !== UserRole.EMPLOYEE) {
+      throw new Error("Можно редактировать только профили сотрудников.");
+    }
+  }
   const name = `${data.lastName} ${data.firstName}`.trim();
   await prisma.user.update({
     where: { id: data.userId },
@@ -1102,14 +1019,20 @@ export async function adminUpdateUserProfile(input: unknown) {
     entityId: data.userId,
     payload: data
   });
-  revalidatePath("/admin/access");
+  revalidatePath("/manager/employees");
 }
 
 export async function revokeTelegramAccessByUsername(usernameInput: string) {
-  const actor = await requireRole([UserRole.SUPER_ADMIN]);
+  const { actor, isSuper } = await requireSuperAdminOrManagerForTelegramAccess();
   const username = usernameInput.trim().toLowerCase().replace(/^@/, "");
-  const superAdminUsername = (process.env.TELEGRAM_ADMIN_USERNAME ?? "").trim().toLowerCase().replace(/^@/, "");
+  const superAdminUsername = normalizedTelegramSuperAdminUsername();
   if (username === superAdminUsername) throw new Error("Нельзя отзывать доступ у суперадмина.");
+  if (!isSuper) {
+    const allow = await prisma.allowedTelegramUser.findFirst({ where: { username } });
+    if (!allow || allow.role !== UserRole.EMPLOYEE) {
+      throw new Error("Отозвать можно только доступ сотрудника.");
+    }
+  }
   await prisma.allowedTelegramUser.updateMany({
     where: { username },
     data: { isActive: false }
@@ -1124,13 +1047,13 @@ export async function revokeTelegramAccessByUsername(usernameInput: string) {
     entityType: "AllowedTelegramUser",
     entityId: username
   });
-  revalidatePath("/admin/access");
+  revalidatePath("/manager/employees");
 }
 
 export async function deleteEmployeeByUsername(usernameInput: string) {
   const actor = await requireRole([UserRole.SUPER_ADMIN]);
   const username = usernameInput.trim().toLowerCase().replace(/^@/, "");
-  const superAdminUsername = (process.env.TELEGRAM_ADMIN_USERNAME ?? "").trim().toLowerCase().replace(/^@/, "");
+  const superAdminUsername = normalizedTelegramSuperAdminUsername();
   if (username === superAdminUsername) throw new Error("Суперадмина нельзя удалить.");
 
   const candidates = await prisma.user.findMany({
@@ -1158,5 +1081,5 @@ export async function deleteEmployeeByUsername(usernameInput: string) {
     entityType: "User",
     entityId: username
   });
-  revalidatePath("/admin/access");
+  revalidatePath("/manager/employees");
 }

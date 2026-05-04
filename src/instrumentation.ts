@@ -9,6 +9,8 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "edge") return;
 
+  process.env.TZ = "Europe/Moscow";
+
   try {
     const dbUrl = (process.env.DATABASE_URL ?? "").trim();
     if (process.env.NODE_ENV === "development" && !dbUrl) {

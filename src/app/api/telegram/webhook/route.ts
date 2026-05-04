@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashToken } from "@/lib/auth";
 import { extractTelegramLoginToken, telegramAnswerCallback, telegramSendMessage } from "@/lib/telegramBotHelpers";
-import { respondToShiftSwapRequest } from "@/lib/shiftSwapCore";
 import { getTelegramAllowanceRole, type TgMiniAppUser } from "@/lib/telegramSignIn";
 
 type TgChat = { id: number };
@@ -68,49 +67,14 @@ async function handleLoginMessage(msg: TelegramMessage) {
   return true;
 }
 
-async function handleSwapCallback(cb: TelegramCallbackQuery) {
-  const cqId = cb.id;
-  const data = (cb.data ?? "").trim();
-  const acc = /^swap_acc:(.+)$/.exec(data);
-  const dec = /^swap_dec:(.+)$/.exec(data);
-  if (!cb.from?.id || (!acc?.[1] && !dec?.[1])) {
-    await telegramAnswerCallback(cqId, {
-      text: "Неизвестная команда",
-      show_alert: true
-    });
-    return;
-  }
-
-  const requestId = (acc?.[1] ?? dec?.[1])!;
-  const accept = Boolean(acc);
-
-  const user = await prisma.user.findFirst({
-    where: { telegramId: String(cb.from.id), isActive: true }
-  });
-
-  if (!user) {
-    await telegramAnswerCallback(cqId, {
-      text: "Профиль не найден — войдите в приложение хотя бы раз.",
-      show_alert: true
-    });
-    return;
-  }
-
-  const result = await respondToShiftSwapRequest(requestId, accept, user.id);
-  if (!result.ok) {
-    await telegramAnswerCallback(cqId, {
-      text: result.message.slice(0, 180),
-      show_alert: true
-    });
-    return;
-  }
-
-  await telegramAnswerCallback(cqId, {
-    text: accept ? "Обмен подтверждён." : "Запрос отклонён."
+async function handleCallbackQuery(cb: TelegramCallbackQuery) {
+  await telegramAnswerCallback(cb.id, {
+    text: "Это действие больше не поддерживается. Откройте приложение.",
+    show_alert: true
   });
 }
 
-/** Входящие обновления от Bot API: вход по токену и кнопки обмена сменами */
+/** Входящие обновления от Bot API: вход по токену и ответы на callback-кнопки. */
 
 export async function POST(req: Request) {
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
@@ -131,7 +95,7 @@ export async function POST(req: Request) {
 
   try {
     if (update.callback_query) {
-      await handleSwapCallback(update.callback_query);
+      await handleCallbackQuery(update.callback_query);
       return NextResponse.json({ ok: true });
     }
 

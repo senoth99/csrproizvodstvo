@@ -16,17 +16,6 @@ export const prismaUserShiftBoardSelect = {
 
 export const prismaUserListNameSelect = { id: true, name: true } as const;
 
-export const prismaUserSwapTargetSelect = {
-  id: true,
-  name: true,
-  telegramId: true
-} as const;
-
-export const prismaUserSwapRequesterSelect = {
-  id: true,
-  name: true
-} as const;
-
 export const prismaUserAccessSessionSelect = {
   id: true,
   name: true,

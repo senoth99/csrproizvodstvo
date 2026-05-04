@@ -36,7 +36,13 @@ export function ManagerEmployeeProfileClient({ employee }: Props) {
   return (
     <div className="card flex max-w-lg flex-col overflow-hidden p-0">
       <div className="flex items-start gap-3 border-b border-border/80 px-4 py-4">
-        <UserAvatar name={employee.name} color={employee.color} size="lg" className="shrink-0" />
+        <UserAvatar
+          name={employee.name}
+          photoUrl={employee.telegramPhotoUrl}
+          color={employee.color}
+          size="lg"
+          className="shrink-0"
+        />
         <div className="min-w-0 flex-1 pt-0.5">
           <h1 id="employee-detail-title" className="text-lg font-bold leading-none tracking-tight">
             {employee.name}
@@ -55,13 +61,6 @@ export function ManagerEmployeeProfileClient({ employee }: Props) {
       </div>
 
       <div className="space-y-4 px-4 py-4">
-        <section className="rounded-xl bg-surface/50 p-3">
-          <p className="ui-section-kicker-strong">Выплаты за всё время</p>
-          <div className="mt-3 rounded-lg border border-dashed border-border/70 bg-card/80 px-3 py-2 text-center text-[13px] font-mono text-foreground/60">
-            —
-          </div>
-        </section>
-
         <section className="rounded-xl bg-surface/50 p-3">
           <p className="ui-section-kicker-strong">NDA подписано</p>
           <div className="mt-3 flex justify-center rounded-lg border border-dashed border-border/70 bg-card/80 px-3 py-2">
