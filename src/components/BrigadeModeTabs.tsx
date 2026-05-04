@@ -13,12 +13,10 @@ const timeHint: Record<BrigadeShiftLabel, string> = {
 
 export function BrigadeModeTabs({
   value,
-  onChange,
-  counts
+  onChange
 }: {
   value: BrigadeShiftLabel;
   onChange: (next: BrigadeShiftLabel) => void;
-  counts: Record<BrigadeShiftLabel, number>;
 }) {
   return (
     <div
@@ -49,7 +47,7 @@ export function BrigadeModeTabs({
                 active ? "text-foreground/75" : "text-muted"
               )}
             >
-              {timeHint[m]} · {counts[m]} напр.
+              {timeHint[m]}
             </span>
           </button>
         );

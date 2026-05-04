@@ -98,12 +98,6 @@ export function BrigadeBoard({
   }
   const visibleBrigades = useMemo(() => brigades.filter((b) => b.shiftLabel === mode), [brigades, mode]);
 
-  const modeCounts = useMemo(() => {
-    const c: Record<BrigadeShiftLabel, number> = { День: 0, Вечер: 0, Ночь: 0 };
-    for (const b of brigades) c[b.shiftLabel]++;
-    return c;
-  }, [brigades]);
-
   const pickerList = useMemo(() => {
     if (!pickCtx) return [];
     const ex = new Set(pickCtx.excludeUserIds);
@@ -147,7 +141,7 @@ export function BrigadeBoard({
     <div className="space-y-4 animate-in">
       <div className="sticky top-0 z-10 space-y-2.5 rounded-xl border border-border bg-card/95 p-3 shadow-sm backdrop-blur-md [-webkit-backdrop-filter:blur(10px)] sm:p-3.5">
         <h2 className="text-sm font-bold uppercase tracking-display">График работы</h2>
-        <BrigadeModeTabs value={mode} onChange={setMode} counts={modeCounts} />
+        <BrigadeModeTabs value={mode} onChange={setMode} />
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">

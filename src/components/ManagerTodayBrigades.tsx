@@ -40,12 +40,6 @@ export function ManagerTodayBrigades({
 }) {
   const [mode, setMode] = useState<BrigadeShiftLabel>("День");
 
-  const modeCounts = useMemo(() => {
-    const c: Record<BrigadeShiftLabel, number> = { День: 0, Вечер: 0, Ночь: 0 };
-    for (const b of brigades) c[b.shiftLabel]++;
-    return c;
-  }, [brigades]);
-
   const visibleBrigades = useMemo(() => brigades.filter((b) => b.shiftLabel === mode), [brigades, mode]);
 
   const grouped = useMemo(() => {
@@ -70,7 +64,7 @@ export function ManagerTodayBrigades({
             <span>{dateLabel}</span>
           </p>
         </div>
-        <BrigadeModeTabs value={mode} onChange={setMode} counts={modeCounts} />
+        <BrigadeModeTabs value={mode} onChange={setMode} />
       </div>
 
       <div className="grid gap-2.5 sm:grid-cols-2">
