@@ -28,7 +28,7 @@ import { canOpenManagerPanel } from "@/lib/managerPanel";
 import { notifyUserAppAndTelegram } from "@/lib/notifyDispatch";
 import { describeShiftBrief } from "@/lib/shiftBrief";
 import { prismaUserListNameSelect, prismaUserShiftBoardSelect } from "@/lib/prismaSafeUserInclude";
-import { isSameAppDay, isoFromWeekDay } from "@/lib/utils";
+import { isoFromWeekDay } from "@/lib/utils";
 import { z } from "zod";
 
 function normalizedTelegramSuperAdminUsername(): string {
@@ -649,8 +649,6 @@ export async function submitShiftReport(input: unknown) {
   });
   if (shift.userId !== user.id) throw new Error("Можно отправлять отчет только по своей смене.");
   if (shift.status === ShiftStatus.CANCELLED) throw new Error("Смена отменена, отчёт недоступен.");
-  const shiftDay = isoFromWeekDay(shift.weekStartDate, shift.dayOfWeek);
-  if (!isSameAppDay(shiftDay, new Date())) throw new Error("Отчёт можно отправить только в день смены.");
   if (shift.report?.status === ShiftReportStatus.ACCEPTED) throw new Error("Отчёт уже принят.");
 
   const { reportIdForPath } = await prisma.$transaction(async (tx) => {

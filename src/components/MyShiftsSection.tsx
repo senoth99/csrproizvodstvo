@@ -4,12 +4,10 @@ import { CalendarDays, Clock3, Wrench } from "lucide-react";
 import { CompleteShiftReportDialog } from "@/components/CompleteShiftReportDialog";
 import { ShiftReportStatus, ShiftStatus } from "@/lib/enums";
 import {
-  addAppDays,
   formatDateRu,
   isSameAppDay,
   isoFromWeekDay,
   safeParseISO,
-  startOfAppDay,
   weekDays
 } from "@/lib/utils";
 
@@ -27,12 +25,13 @@ type ShiftItem = {
 
 export function MyShiftsSection({ weekShifts }: { weekShifts: ShiftItem[] }) {
   const now = new Date();
-  const tomorrowStart = addAppDays(startOfAppDay(now), 1);
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
 
   const renderShiftCard = (s: ShiftItem) => {
     const shiftDay = isoFromWeekDay(safeParseISO(s.weekStartDateIso), s.dayOfWeek);
     const isToday = isSameAppDay(shiftDay, now);
-    const isTomorrow = isSameAppDay(shiftDay, tomorrowStart);
+    const isTomorrow = isSameAppDay(shiftDay, tomorrow);
     const dayBadge = isToday ? "Сегодня" : isTomorrow ? "Завтра" : null;
 
     const reportPending =
@@ -47,7 +46,6 @@ export function MyShiftsSection({ weekShifts }: { weekShifts: ShiftItem[] }) {
     )} · ${s.startTime}–${s.endTime}`;
 
     const showCompleteFab =
-      isToday &&
       s.status !== ShiftStatus.CANCELLED &&
       !reportPending &&
       !reportAccepted;
@@ -81,7 +79,7 @@ export function MyShiftsSection({ weekShifts }: { weekShifts: ShiftItem[] }) {
           {s.startTime} - {s.endTime}
         </div>
 
-        {isToday && s.status !== ShiftStatus.CANCELLED ? (
+        {s.status !== ShiftStatus.CANCELLED ? (
           reportPending ? (
             <p className="rounded-sm border border-highlight/45 bg-highlight/12 px-3 py-2.5 text-center text-[10px] font-bold uppercase tracking-display text-foreground">
               Отчёт на проверке
