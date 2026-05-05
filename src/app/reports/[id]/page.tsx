@@ -1,4 +1,5 @@
 import { ServiceUnavailable } from "@/components/ServiceUnavailable";
+import { ReportTextEditor } from "@/components/ReportTextEditor";
 import { ReportReviewActions } from "@/components/ReportReviewActions";
 import { ReportStatusBadge } from "@/components/ReportStatusBadge";
 import Link from "next/link";
@@ -93,9 +94,11 @@ export default async function ReportDetailPage({ params }: { params: Promise<{ i
             </div>
           ) : null}
 
-          <div className="rounded-lg border-b border-border bg-transparent pb-3 pt-1">
-            <p className="whitespace-pre-wrap text-sm leading-relaxed">{report.text}</p>
-          </div>
+          <ReportTextEditor
+            reportId={report.id}
+            initialText={report.text}
+            canEdit={!isAdmin && report.status === ShiftReportStatus.PENDING_REVIEW}
+          />
 
           <ReportReviewActions
             reportId={report.id}

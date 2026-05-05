@@ -14,7 +14,7 @@ import {
 } from "@/lib/auth";
 import { BRIGADES } from "@/lib/brigades";
 import { prisma } from "@/lib/prisma";
-import { reportSchema, shiftSchema, updateShiftSchema, userSchema, zoneLimitSchema, zoneSchema } from "@/lib/validation";
+import { reportSchema, shiftSchema, updateReportSchema, updateShiftSchema, userSchema, zoneLimitSchema, zoneSchema } from "@/lib/validation";
 import { resolveAppPublicBaseUrl } from "@/lib/appUrl";
 import { writeAuditLog } from "@/lib/audit";
 import {
@@ -689,6 +689,33 @@ export async function submitShiftReport(input: unknown) {
   revalidatePath(`/reports/${reportIdForPath}`);
   revalidatePath("/me");
   revalidatePath("/schedule");
+}
+
+export async function updateMyShiftReport(input: unknown) {
+  const user = await requireAuth();
+  const data = updateReportSchema.parse(input);
+  const report = await prisma.shiftReport.findUnique({
+    where: { id: data.reportId },
+    select: { id: true, userId: true, status: true }
+  });
+  if (!report) throw new Error("Отчёт не найден.");
+  if (report.userId !== user.id) throw new Error("Можно редактировать только свой отчёт.");
+  if (report.status !== ShiftReportStatus.PENDING_REVIEW) {
+    throw new Error("Редактирование доступно только до проверки отчёта.");
+  }
+
+  await prisma.shiftReport.update({
+    where: { id: report.id },
+    data: { text: data.text.trim() }
+  });
+  await writeAuditLog({
+    actorUserId: user.id,
+    action: "UPDATE_SHIFT_REPORT",
+    entityType: "ShiftReport",
+    entityId: report.id
+  });
+  revalidatePath("/reports");
+  revalidatePath(`/reports/${report.id}`);
 }
 
 export async function acceptShiftReportWithAccrual(input: unknown) {

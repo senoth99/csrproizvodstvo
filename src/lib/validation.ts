@@ -43,3 +43,8 @@ export const reportSchema = z.object({
   shiftId: z.string().cuid(),
   text: z.string().min(5)
 });
+
+export const updateReportSchema = z.object({
+  reportId: z.string().cuid(),
+  text: z.string().min(5)
+});
