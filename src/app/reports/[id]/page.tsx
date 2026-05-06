@@ -8,7 +8,7 @@ import { ArrowLeft } from "lucide-react";
 import { getReportById } from "@/app/actions";
 import { catchDb } from "@/lib/dbBoundary";
 import { getCurrentUser, requireAuth } from "@/lib/auth";
-import { ShiftReportStatus, UserRole } from "@/lib/enums";
+import { ShiftReportStatus } from "@/lib/enums";
 import { formatDateRu, formatMoneyRu, isoFromWeekDay, weekDays } from "@/lib/utils";
 
 export default async function ReportDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -21,7 +21,7 @@ export default async function ReportDetailPage({ params }: { params: Promise<{ i
 
   try {
     const viewer = await getCurrentUser();
-    const isAdmin = viewer?.role === UserRole.ADMIN || viewer?.role === UserRole.SUPER_ADMIN;
+    const isAdmin = Boolean(viewer?.isManager) || viewer?.role === "ADMIN" || viewer?.role === "SUPER_ADMIN";
 
     const dayLabel = weekDays.find((w) => w.index === report.shift.dayOfWeek)?.name ?? "";
     const shiftDate = isoFromWeekDay(report.shift.weekStartDate, report.shift.dayOfWeek);

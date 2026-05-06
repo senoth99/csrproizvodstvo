@@ -5,7 +5,6 @@ import { ChevronRight } from "lucide-react";
 import { getReports } from "@/app/actions";
 import { catchDb } from "@/lib/dbBoundary";
 import { getCurrentUser, requireAuth } from "@/lib/auth";
-import { UserRole } from "@/lib/enums";
 import { formatDateRu, isoFromWeekDay, weekDays } from "@/lib/utils";
 
 export default async function ReportsPage() {
@@ -14,7 +13,7 @@ export default async function ReportsPage() {
   if (!reportsResult.ok) return <ServiceUnavailable scope="reports" />;
   const reports = reportsResult.data;
   const user = await getCurrentUser();
-  const isAdmin = user?.role === UserRole.ADMIN || user?.role === UserRole.SUPER_ADMIN;
+  const isAdmin = Boolean(user?.isManager) || user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
 
   try {
     return (

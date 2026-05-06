@@ -71,8 +71,8 @@ const acceptShiftReportSchema = z
     path: ["amountAppearanceRub"]
   });
 
-function userIsReportAdmin(actor: { role: string }) {
-  return actor.role === UserRole.ADMIN || actor.role === UserRole.SUPER_ADMIN;
+function userIsReportAdmin(actor: { role: string; isManager?: boolean | null }) {
+  return actor.role === UserRole.ADMIN || actor.role === UserRole.SUPER_ADMIN || Boolean(actor.isManager);
 }
 
 function toDateTime(weekStartDate: Date, dayOfWeek: number, time: string) {
