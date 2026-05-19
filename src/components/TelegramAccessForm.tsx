@@ -165,6 +165,29 @@ export function TelegramAccessForm({
   const isInvitingSuperAdmin =
     variant === "admin" && Boolean(telegramSuperUsername) && trimmedInvite === telegramSuperUsername;
 
+  const rowDeleteBlocked = (row: MergedRow) =>
+    row.role === UserRole.SUPER_ADMIN ||
+    (Boolean(telegramSuperUsername) && row.username === telegramSuperUsername);
+
+  const confirmDeleteEmployee = (targetUsername: string) =>
+    window.confirm(
+      `Удалить @${targetUsername} из списка?\n\nБудут сняты доступ в Telegram и профиль в приложении (смены и связанные записи тоже удалятся).`
+    );
+
+  const runDeleteEmployee = (targetUsername: string) => {
+    setError("");
+    start(async () => {
+      try {
+        await deleteEmployeeByUsername(targetUsername);
+        if (selected?.username === targetUsername) setSelected(null);
+        setEmployeeProfileRow((cur) => (cur?.username === targetUsername ? null : cur));
+        router.refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Не удалось удалить сотрудника");
+      }
+    });
+  };
+
   return (
     <div className="space-y-3">
       <form
@@ -279,34 +302,13 @@ export function TelegramAccessForm({
               <button
                 type="button"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border bg-surface text-muted transition hover:border-red-400/40 hover:text-red-400"
-                disabled={
-                  pending ||
-                  !row.accessRowId ||
-                  row.role === UserRole.SUPER_ADMIN ||
-                  (Boolean(telegramSuperUsername) && row.username === telegramSuperUsername)
-                }
-                title="Отозвать доступ"
-                aria-label={`Отозвать доступ @${row.username}`}
+                disabled={pending || rowDeleteBlocked(row)}
+                title="Удалить сотрудника"
+                aria-label={`Удалить сотрудника @${row.username}`}
                 onClick={() => {
-                  if (
-                    !row.accessRowId ||
-                    row.role === UserRole.SUPER_ADMIN ||
-                    (Boolean(telegramSuperUsername) && row.username === telegramSuperUsername)
-                  ) {
-                    return;
-                  }
-                  if (!window.confirm(`Отозвать доступ у @${row.username}?`)) return;
-                  setError("");
-                  start(async () => {
-                    try {
-                      await revokeTelegramAccessByUsername(row.username);
-                      if (selected?.username === row.username) setSelected(null);
-                      setEmployeeProfileRow((cur) => (cur?.username === row.username ? null : cur));
-                      router.refresh();
-                    } catch (err) {
-                      setError(err instanceof Error ? err.message : "Не удалось отозвать доступ");
-                    }
-                  });
+                  if (rowDeleteBlocked(row)) return;
+                  if (!confirmDeleteEmployee(row.username)) return;
+                  runDeleteEmployee(row.username);
                 }}
               >
                 <UserX size={15} aria-hidden />
@@ -440,42 +442,37 @@ export function TelegramAccessForm({
               >
                 Сохранить ФИ
               </button>
-              {selected.accessRowId ? (
+              {selected.accessRowId && !rowDeleteBlocked(selected) ? (
                 <button
                   className="btn-secondary"
-                  disabled={
-                    pending ||
-                    selected.role === UserRole.SUPER_ADMIN ||
-                    (Boolean(telegramSuperUsername) && selected.username === telegramSuperUsername)
-                  }
-                  onClick={() =>
+                  disabled={pending}
+                  onClick={() => {
+                    if (!window.confirm(`Отозвать доступ у @${selected.username}? Сотрудник останется в списке, пока не удалите профиль.`))
+                      return;
+                    setManagerToggleError("");
                     start(async () => {
-                      if (selected.role === UserRole.SUPER_ADMIN || (telegramSuperUsername && selected.username === telegramSuperUsername))
-                        return;
-                      await revokeTelegramAccessByUsername(selected.username);
-                      setSelected(null);
-                      setEmployeeProfileRow((cur) => (cur?.username === selected.username ? null : cur));
-                      router.refresh();
-                    })
-                  }
+                      try {
+                        await revokeTelegramAccessByUsername(selected.username);
+                        setSelected(null);
+                        setEmployeeProfileRow((cur) => (cur?.username === selected.username ? null : cur));
+                        router.refresh();
+                      } catch (err) {
+                        setManagerToggleError(err instanceof Error ? err.message : "Не удалось отозвать доступ");
+                      }
+                    });
+                  }}
                 >
                   Отозвать доступ
                 </button>
               ) : null}
-              {variant === "admin" &&
-              !(Boolean(telegramSuperUsername) && selected.username === telegramSuperUsername) &&
-              selected.role !== UserRole.SUPER_ADMIN ? (
+              {!rowDeleteBlocked(selected) ? (
                 <button
                   className="btn-secondary border-muted/45 text-muted"
                   disabled={pending}
-                  onClick={() =>
-                    start(async () => {
-                      await deleteEmployeeByUsername(selected.username);
-                      setSelected(null);
-                      setEmployeeProfileRow((cur) => (cur?.username === selected.username ? null : cur));
-                      router.refresh();
-                    })
-                  }
+                  onClick={() => {
+                    if (!confirmDeleteEmployee(selected.username)) return;
+                    runDeleteEmployee(selected.username);
+                  }}
                 >
                   Удалить сотрудника
                 </button>

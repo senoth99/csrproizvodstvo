@@ -1083,10 +1083,15 @@ export async function revokeTelegramAccessByUsername(usernameInput: string) {
 }
 
 export async function deleteEmployeeByUsername(usernameInput: string) {
-  const actor = await requireRole([UserRole.SUPER_ADMIN]);
+  const { actor, isSuper } = await requireSuperAdminOrManagerForTelegramAccess();
   const username = usernameInput.trim().toLowerCase().replace(/^@/, "");
   const superAdminUsername = normalizedTelegramSuperAdminUsername();
   if (username === superAdminUsername) throw new Error("Суперадмина нельзя удалить.");
+
+  const allow = await prisma.allowedTelegramUser.findFirst({ where: { username } });
+  if (!isSuper && allow && allow.role !== UserRole.EMPLOYEE) {
+    throw new Error("Удалить можно только сотрудника.");
+  }
 
   const candidates = await prisma.user.findMany({
     where: { telegramUsername: { not: null } },
@@ -1094,12 +1099,12 @@ export async function deleteEmployeeByUsername(usernameInput: string) {
   });
   const targets = candidates.filter((u) => (u.telegramUsername ?? "").toLowerCase() === username);
   if (targets.some((u) => u.role === UserRole.SUPER_ADMIN)) throw new Error("Суперадмина нельзя удалить.");
+  if (!isSuper && targets.some((u) => u.role !== UserRole.EMPLOYEE)) {
+    throw new Error("Удалить можно только сотрудника.");
+  }
 
   await prisma.$transaction(async (tx) => {
-    await tx.allowedTelegramUser.updateMany({
-      where: { username },
-      data: { isActive: false, telegramId: null }
-    });
+    await tx.allowedTelegramUser.deleteMany({ where: { username } });
     if (targets.length > 0) {
       await tx.user.deleteMany({
         where: { id: { in: targets.map((t) => t.id) }, role: { not: UserRole.SUPER_ADMIN } }
