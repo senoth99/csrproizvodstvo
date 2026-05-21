@@ -26,6 +26,7 @@ import {
 } from "@/lib/enums";
 import { canOpenManagerPanel } from "@/lib/managerPanel";
 import { notifyUserAppAndTelegram } from "@/lib/notifyDispatch";
+import { notifyAdminsEmployeeShiftChange } from "@/lib/notifyAdmins";
 import { describeShiftBrief } from "@/lib/shiftBrief";
 import { prismaUserListNameSelect, prismaUserShiftBoardSelect } from "@/lib/prismaSafeUserInclude";
 import { isoFromWeekDay } from "@/lib/utils";
@@ -33,6 +34,23 @@ import { z } from "zod";
 
 function normalizedTelegramSuperAdminUsername(): string {
   return (process.env.TELEGRAM_ADMIN_USERNAME ?? "").trim().toLowerCase().replace(/^@/, "");
+}
+
+function scheduleAdminsEmployeeShiftNotify(input: {
+  type:
+    | typeof AppNotificationType.SHIFT_ADDED_BY_EMPLOYEE
+    | typeof AppNotificationType.SHIFT_REMOVED_BY_EMPLOYEE;
+  employeeName: string;
+  brief: string;
+  payload?: unknown;
+}) {
+  after(async () => {
+    try {
+      await notifyAdminsEmployeeShiftChange(input);
+    } catch (e) {
+      console.error("[scheduleAdminsEmployeeShiftNotify]", input.type, e);
+    }
+  });
 }
 
 async function requireSuperAdminOrManagerForTelegramAccess() {
@@ -253,6 +271,20 @@ export async function createShift(input: unknown, forceOverride = false) {
     data: { ...parsed, source: actor.role === UserRole.EMPLOYEE ? ShiftSource.SELF : ShiftSource.ADMIN, createdById: actor.id, updatedById: actor.id }
   });
   await writeAuditLog({ actorUserId: actor.id, action: "CREATE_SHIFT", entityType: "Shift", entityId: shift.id, payload: parsed });
+  if (actor.role === UserRole.EMPLOYEE) {
+    const withZone = await prisma.shift.findUnique({
+      where: { id: shift.id },
+      include: { zone: true }
+    });
+    if (withZone) {
+      scheduleAdminsEmployeeShiftNotify({
+        type: AppNotificationType.SHIFT_ADDED_BY_EMPLOYEE,
+        employeeName: actor.name,
+        brief: describeShiftBrief(withZone),
+        payload: { shiftId: shift.id, userId: actor.id }
+      });
+    }
+  }
   revalidatePath("/schedule");
   revalidatePath("/me");
 }
@@ -277,11 +309,21 @@ export async function toggleBrigadeAssignment(input: { brigadeId: string; dayOfW
       startTime: brigade.startTime,
       endTime: brigade.endTime,
       status: { not: ShiftStatus.CANCELLED }
-    }
+    },
+    include: { zone: true }
   });
 
   if (existingSameCell) {
+    const removedBrief = describeShiftBrief(existingSameCell);
     await prisma.shift.delete({ where: { id: existingSameCell.id } });
+    if (actor.role === UserRole.EMPLOYEE) {
+      scheduleAdminsEmployeeShiftNotify({
+        type: AppNotificationType.SHIFT_REMOVED_BY_EMPLOYEE,
+        employeeName: actor.name,
+        brief: removedBrief,
+        payload: { shiftId: existingSameCell.id, userId: actor.id }
+      });
+    }
     revalidatePath("/schedule");
     revalidatePath("/me");
     return;
@@ -295,7 +337,7 @@ export async function toggleBrigadeAssignment(input: { brigadeId: string; dayOfW
     }
   });
 
-  await prisma.shift.create({
+  const shift = await prisma.shift.create({
     data: {
       userId: actor.id,
       zoneId: zone.id,
@@ -308,6 +350,20 @@ export async function toggleBrigadeAssignment(input: { brigadeId: string; dayOfW
       updatedById: actor.id
     }
   });
+  if (actor.role === UserRole.EMPLOYEE) {
+    scheduleAdminsEmployeeShiftNotify({
+      type: AppNotificationType.SHIFT_ADDED_BY_EMPLOYEE,
+      employeeName: actor.name,
+      brief: describeShiftBrief({
+        zone,
+        dayOfWeek,
+        weekStartDate,
+        startTime: brigade.startTime,
+        endTime: brigade.endTime
+      }),
+      payload: { shiftId: shift.id, userId: actor.id }
+    });
+  }
   revalidatePath("/schedule");
   revalidatePath("/me");
 }
@@ -593,6 +649,20 @@ export async function updateShift(input: unknown, forceOverride = false) {
   await assertZoneLimit(zoneId, dayOfWeek, startTime, endTime, weekStartDate, isAdmin && forceOverride);
   await prisma.shift.update({ where: { id: current.id }, data: { ...parsed, updatedById: actor.id } });
   await writeAuditLog({ actorUserId: actor.id, action: "UPDATE_SHIFT", entityType: "Shift", entityId: current.id, payload: parsed });
+  if (actor.role === UserRole.EMPLOYEE) {
+    const withZone = await prisma.shift.findUnique({
+      where: { id: current.id },
+      include: { zone: true }
+    });
+    if (withZone) {
+      scheduleAdminsEmployeeShiftNotify({
+        type: AppNotificationType.SHIFT_ADDED_BY_EMPLOYEE,
+        employeeName: actor.name,
+        brief: describeShiftBrief(withZone),
+        payload: { shiftId: current.id, userId: actor.id, updated: true }
+      });
+    }
+  }
   revalidatePath("/schedule");
   revalidatePath("/me");
 }
@@ -605,6 +675,20 @@ export async function cancelShift(id: string) {
   await assertCanEditBy24h(actor.role, start);
   await prisma.shift.update({ where: { id }, data: { status: ShiftStatus.CANCELLED, updatedById: actor.id } });
   await writeAuditLog({ actorUserId: actor.id, action: "CANCEL_SHIFT", entityType: "Shift", entityId: id });
+  if (actor.role === UserRole.EMPLOYEE) {
+    const withZone = await prisma.shift.findUnique({
+      where: { id },
+      include: { zone: true }
+    });
+    if (withZone) {
+      scheduleAdminsEmployeeShiftNotify({
+        type: AppNotificationType.SHIFT_REMOVED_BY_EMPLOYEE,
+        employeeName: actor.name,
+        brief: describeShiftBrief(withZone),
+        payload: { shiftId: id, userId: actor.id, cancelled: true }
+      });
+    }
+  }
   revalidatePath("/schedule");
 }
 

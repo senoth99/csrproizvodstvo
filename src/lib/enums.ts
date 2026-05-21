@@ -26,7 +26,11 @@ export const AppNotificationType = {
   /** Руководитель/суперадмин записал пользователя в ячейку графика */
   SHIFT_ASSIGNED_BY_MANAGER: "SHIFT_ASSIGNED_BY_MANAGER",
   /** Запись в ячейке удалена руководителем */
-  SHIFT_REMOVED_BY_MANAGER: "SHIFT_REMOVED_BY_MANAGER"
+  SHIFT_REMOVED_BY_MANAGER: "SHIFT_REMOVED_BY_MANAGER",
+  /** Сотрудник сам записался на смену (график / форма) */
+  SHIFT_ADDED_BY_EMPLOYEE: "SHIFT_ADDED_BY_EMPLOYEE",
+  /** Сотрудник сам снял смену с графика */
+  SHIFT_REMOVED_BY_EMPLOYEE: "SHIFT_REMOVED_BY_EMPLOYEE"
 } as const;
 
 export type AppNotificationType = (typeof AppNotificationType)[keyof typeof AppNotificationType];

@@ -25,5 +25,19 @@ export const APP_NOTIFICATIONS_CATALOG: CatalogRow[] = [
     when: "Руководитель или суперадмин удалил вашу запись из ячейки графика.",
     inApp: true,
     telegram: "То же текстом в личку бота."
+  },
+  {
+    type: AppNotificationType.SHIFT_ADDED_BY_EMPLOYEE,
+    titleRu: "Сотрудник записался на смену",
+    when: "Сотрудник (роль EMPLOYEE) поставил себе смену в графике или через форму.",
+    inApp: true,
+    telegram: "В личку бота всем ADMIN и SUPER_ADMIN с привязанным telegramId."
+  },
+  {
+    type: AppNotificationType.SHIFT_REMOVED_BY_EMPLOYEE,
+    titleRu: "Сотрудник снял смену",
+    when: "Сотрудник убрал свою запись из ячейки графика.",
+    inApp: true,
+    telegram: "В личку бота всем ADMIN и SUPER_ADMIN с привязанным telegramId."
   }
 ];
