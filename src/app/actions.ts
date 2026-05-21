@@ -358,7 +358,7 @@ export async function toggleBrigadeAssignment(input: { brigadeId: string; dayOfW
       type: AppNotificationType.SHIFT_ADDED_BY_EMPLOYEE,
       employeeName: actor.name,
       brief: describeShiftBrief({
-        zone,
+        zone: { name: brigade.zoneName },
         dayOfWeek,
         weekStartDate,
         startTime: brigade.startTime,
