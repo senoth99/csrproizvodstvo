@@ -26,7 +26,7 @@ import {
 } from "@/lib/enums";
 import { canOpenManagerPanel } from "@/lib/managerPanel";
 import { notifyUserAppAndTelegram } from "@/lib/notifyDispatch";
-import { notifyAdminsEmployeeShiftChange } from "@/lib/notifyAdmins";
+import { notifyAdminsEmployeeShiftChange, notifyScheduleAdmins } from "@/lib/notifyAdmins";
 import { describeShiftBrief } from "@/lib/shiftBrief";
 import { prismaUserListNameSelect, prismaUserShiftBoardSelect } from "@/lib/prismaSafeUserInclude";
 import { isoFromWeekDay } from "@/lib/utils";
@@ -43,6 +43,7 @@ function scheduleAdminsEmployeeShiftNotify(input: {
   employeeName: string;
   brief: string;
   payload?: unknown;
+  excludeUserIds?: string[];
 }) {
   after(async () => {
     try {
@@ -281,7 +282,8 @@ export async function createShift(input: unknown, forceOverride = false) {
         type: AppNotificationType.SHIFT_ADDED_BY_EMPLOYEE,
         employeeName: actor.name,
         brief: describeShiftBrief(withZone),
-        payload: { shiftId: shift.id, userId: actor.id }
+        payload: { shiftId: shift.id, userId: actor.id },
+        excludeUserIds: [actor.id]
       });
     }
   }
@@ -321,7 +323,8 @@ export async function toggleBrigadeAssignment(input: { brigadeId: string; dayOfW
         type: AppNotificationType.SHIFT_REMOVED_BY_EMPLOYEE,
         employeeName: actor.name,
         brief: removedBrief,
-        payload: { shiftId: existingSameCell.id, userId: actor.id }
+        payload: { shiftId: existingSameCell.id, userId: actor.id },
+        excludeUserIds: [actor.id]
       });
     }
     revalidatePath("/schedule");
@@ -361,7 +364,8 @@ export async function toggleBrigadeAssignment(input: { brigadeId: string; dayOfW
         startTime: brigade.startTime,
         endTime: brigade.endTime
       }),
-      payload: { shiftId: shift.id, userId: actor.id }
+      payload: { shiftId: shift.id, userId: actor.id },
+      excludeUserIds: [actor.id]
     });
   }
   revalidatePath("/schedule");
@@ -452,6 +456,19 @@ export async function managerAssignBrigadeShift(input: unknown) {
           ? `📅 Вы назначили себе смену:\n${brief}`
           : `📅 Вам назначили смену (${actor.name}):\n${brief}`
       });
+
+      await notifyScheduleAdmins({
+        type: AppNotificationType.SHIFT_ADDED_BY_EMPLOYEE,
+        title: selfAssigned ? "Запись в график" : "Назначили смену",
+        body: selfAssigned
+          ? `${target.name} записался в график: ${brief}.`
+          : `${actor.name} назначил ${target.name}: ${brief}.`,
+        telegramText: selfAssigned
+          ? `📅 ${target.name} записался на смену:\n${brief}`
+          : `📅 ${actor.name} назначил смену — ${target.name}:\n${brief}`,
+        payload: { shiftId: shift.id, userId: target.id, byManagerId: actor.id, selfAssigned },
+        excludeUserIds: [target.id]
+      });
     } catch (e) {
       console.error("[managerAssignBrigadeShift] уведомление не отправлено, смена уже создана:", e);
     }
@@ -467,12 +484,14 @@ export async function managerRemoveShift(shiftId: string) {
   if (!canOpenManagerPanel(actor)) throw new Error("Недостаточно прав.");
   const shift = await prisma.shift.findUnique({
     where: { id: shiftId },
-    include: { zone: true }
+    include: { zone: true, user: { select: { id: true, name: true } } }
   });
   if (!shift) throw new Error("Смена не найдена.");
   if (shift.status === ShiftStatus.CANCELLED) return;
 
   const brief = describeShiftBrief(shift);
+  const targetName = shift.user.name;
+  const targetUserId = shift.userId;
 
   await prisma.shift.delete({ where: { id: shiftId } });
   await writeAuditLog({
@@ -483,21 +502,35 @@ export async function managerRemoveShift(shiftId: string) {
     payload: { userId: shift.userId }
   });
 
-  if (shift.userId !== actor.id) {
-    after(async () => {
-      try {
+  after(async () => {
+    try {
+      if (targetUserId !== actor.id) {
         await notifyUserAppAndTelegram({
-          userId: shift.userId,
+          userId: targetUserId,
           type: AppNotificationType.SHIFT_REMOVED_BY_MANAGER,
           title: "С вас сняли смену",
           body: `${actor.name} удалил вашу запись из графика: ${brief}.`,
           payload: { shiftId }
         });
-      } catch (e) {
-        console.error("[managerRemoveShift] уведомление не отправлено, запись уже удалена:", e);
       }
-    });
-  }
+      await notifyScheduleAdmins({
+        type: AppNotificationType.SHIFT_REMOVED_BY_EMPLOYEE,
+        title: "Смена снята с графика",
+        body:
+          targetUserId === actor.id
+            ? `${actor.name} снял свою смену: ${brief}.`
+            : `${actor.name} снял смену с ${targetName}: ${brief}.`,
+        telegramText:
+          targetUserId === actor.id
+            ? `📅 ${actor.name} снял смену:\n${brief}`
+            : `📅 ${actor.name} снял смену — ${targetName}:\n${brief}`,
+        payload: { shiftId, userId: targetUserId, byManagerId: actor.id },
+        excludeUserIds: targetUserId !== actor.id ? [targetUserId] : [actor.id]
+      });
+    } catch (e) {
+      console.error("[managerRemoveShift] уведомление не отправлено, запись уже удалена:", e);
+    }
+  });
 
   revalidatePath("/schedule");
   revalidatePath("/me");
@@ -659,7 +692,8 @@ export async function updateShift(input: unknown, forceOverride = false) {
         type: AppNotificationType.SHIFT_ADDED_BY_EMPLOYEE,
         employeeName: actor.name,
         brief: describeShiftBrief(withZone),
-        payload: { shiftId: current.id, userId: actor.id, updated: true }
+        payload: { shiftId: current.id, userId: actor.id, updated: true },
+        excludeUserIds: [actor.id]
       });
     }
   }
@@ -685,7 +719,8 @@ export async function cancelShift(id: string) {
         type: AppNotificationType.SHIFT_REMOVED_BY_EMPLOYEE,
         employeeName: actor.name,
         brief: describeShiftBrief(withZone),
-        payload: { shiftId: id, userId: actor.id, cancelled: true }
+        payload: { shiftId: id, userId: actor.id, cancelled: true },
+        excludeUserIds: [actor.id]
       });
     }
   }

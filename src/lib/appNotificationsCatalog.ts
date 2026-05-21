@@ -29,15 +29,15 @@ export const APP_NOTIFICATIONS_CATALOG: CatalogRow[] = [
   {
     type: AppNotificationType.SHIFT_ADDED_BY_EMPLOYEE,
     titleRu: "Сотрудник записался на смену",
-    when: "Сотрудник (роль EMPLOYEE) поставил себе смену в графике или через форму.",
+    when: "Сотрудник поставил смену сам или руководитель назначил сотрудника в графике.",
     inApp: true,
-    telegram: "В личку бота всем ADMIN и SUPER_ADMIN с привязанным telegramId."
+    telegram: "В личку бота всем ADMIN, SUPER_ADMIN и руководителям (isManager) с telegramId, кроме уже уведомлённого."
   },
   {
     type: AppNotificationType.SHIFT_REMOVED_BY_EMPLOYEE,
     titleRu: "Сотрудник снял смену",
-    when: "Сотрудник убрал свою запись из ячейки графика.",
+    when: "Сотрудник убрал смену или руководитель снял запись с графика.",
     inApp: true,
-    telegram: "В личку бота всем ADMIN и SUPER_ADMIN с привязанным telegramId."
+    telegram: "В личку бота всем ADMIN, SUPER_ADMIN и руководителям (isManager) с telegramId."
   }
 ];
