@@ -12,12 +12,15 @@ export async function POST() {
   const botUser = (process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "").replace(/^@/, "").trim();
   const devBypass = process.env.TELEGRAM_ALLOW_DEV_LOGIN === "true";
 
-  if (!isBrowserTelegramLoginConfigured() && !devBypass) {
-    return NextResponse.json(
-      { error: "Не заданы TELEGRAM_BOT_TOKEN или NEXT_PUBLIC_TELEGRAM_BOT_USERNAME" },
-      { status: 503 }
-    );
-  }
+    if (!isBrowserTelegramLoginConfigured() && !devBypass) {
+      return NextResponse.json(
+        {
+          error:
+            "Вход из браузера не настроен на сервере. Задайте TELEGRAM_BOT_TOKEN и NEXT_PUBLIC_TELEGRAM_BOT_USERNAME, пересоберите приложение."
+        },
+        { status: 503 }
+      );
+    }
 
   try {
     await prisma.telegramLoginChallenge.deleteMany({

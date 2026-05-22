@@ -104,7 +104,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    await handleLoginMessage(msg);
+    const text = msg.text?.trim() ?? "";
+    const handled = await handleLoginMessage(msg);
+    if (!handled && /^\/start(?:@\w+)?$/i.test(text)) {
+      await telegramSendMessage(
+        msg.chat.id,
+        "Откройте вход на сайте в браузере и нажмите «Открыть бота в Telegram» — нужна ссылка с сайта, не меню Start в чате."
+      );
+    }
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("[api/telegram/webhook]", e);
