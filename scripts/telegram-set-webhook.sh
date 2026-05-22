@@ -14,8 +14,19 @@ fi
 : "${APP_URL:?Задайте APP_URL в .env (https://ваш-домен)}"
 : "${TELEGRAM_WEBHOOK_SECRET:?Задайте TELEGRAM_WEBHOOK_SECRET в .env}"
 
+# Telegram API принимает webhook только по HTTPS (даже если APP_URL в .env с http://).
 WEBHOOK_URL="${APP_URL%/}/api/telegram/webhook"
+if [[ "$WEBHOOK_URL" == http://* ]]; then
+  echo "⚠️  APP_URL без HTTPS — для webhook подставляем https:// (исправьте APP_URL в .env на https://...)"
+  WEBHOOK_URL="https://${WEBHOOK_URL#http://}"
+fi
+
 echo "Webhook URL: ${WEBHOOK_URL}"
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "Нужен jq: apt install jq / brew install jq"
+  exit 1
+fi
 
 curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
   -H "Content-Type: application/json" \
