@@ -177,7 +177,7 @@ export async function notifyAdminsShiftReportSubmitted(input: {
   );
 }
 
-/** Сотрудник впервые отметился на производстве (QR). */
+/** Сотрудник отметился на производстве (QR), в т.ч. повторно. */
 export async function notifyAdminsShiftArrival(input: { employeeName: string; arrivedAt: Date }) {
   const timeStr = formatDateRu(input.arrivedAt, "dd.MM.yyyy HH:mm");
   const body = `${input.employeeName} — ${timeStr}`;

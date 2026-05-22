@@ -6,6 +6,19 @@ import { isAccessDeniedResponse, type AccessDeniedPayload } from "@/lib/accessDe
 const POLL_MS = 800;
 const STORAGE_KEY = "ps_tg_browser_login_v1";
 
+function isMobileBrowser(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+}
+
+function readStorageRaw(): string | null {
+  try {
+    return sessionStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
 type StoredChallenge = {
   token: string;
   openUrl: string;
@@ -31,11 +44,11 @@ type CompletePayload = AccessDeniedPayload & {
 function readStored(): StoredChallenge | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
+    const raw = readStorageRaw();
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredChallenge;
     if (!parsed.token || !parsed.openUrl || parsed.expiresAt < Date.now()) {
-      sessionStorage.removeItem(STORAGE_KEY);
+      clearStored();
       return null;
     }
     return parsed;
@@ -45,11 +58,26 @@ function readStored(): StoredChallenge | null {
 }
 
 function writeStored(data: StoredChallenge) {
-  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  const json = JSON.stringify(data);
+  try {
+    sessionStorage.setItem(STORAGE_KEY, json);
+  } catch {
+    /* ignore */
+  }
+  try {
+    localStorage.setItem(STORAGE_KEY, json);
+  } catch {
+    /* ignore */
+  }
 }
 
 function clearStored() {
-  sessionStorage.removeItem(STORAGE_KEY);
+  try {
+    sessionStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
 }
 
 export function TelegramBrowserLogin({
@@ -107,8 +135,9 @@ export function TelegramBrowserLogin({
   );
 
   const pollOnce = useCallback(async () => {
-    const token = tokenRef.current;
-    if (!token || !pollingRef.current) return;
+    const token = tokenRef.current ?? readStored()?.token ?? null;
+    if (!token) return;
+    tokenRef.current = token;
     await completeLogin(token);
   }, [completeLogin]);
 
@@ -128,6 +157,18 @@ export function TelegramBrowserLogin({
     },
     [completeLogin]
   );
+
+  const resumePollingFromStorage = useCallback(() => {
+    const stored = readStored();
+    if (!stored) return;
+    tokenRef.current = stored.token;
+    setOpenUrl(stored.openUrl);
+    if (!pollingRef.current) {
+      startPolling(stored.token);
+    } else {
+      void pollOnce();
+    }
+  }, [pollOnce, startPolling]);
 
   const beginBrowserLogin = useCallback(
     async (forceNew = false) => {
@@ -188,17 +229,30 @@ export function TelegramBrowserLogin({
 
   useEffect(() => {
     const onVisible = () => {
-      if (document.visibilityState === "visible" && pollingRef.current) {
-        void pollOnce();
-      }
+      if (document.visibilityState !== "visible") return;
+      resumePollingFromStorage();
+    };
+    const onPageShow = () => {
+      resumePollingFromStorage();
     };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
+    window.addEventListener("pageshow", onPageShow);
     return () => {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
+      window.removeEventListener("pageshow", onPageShow);
     };
-  }, [pollOnce]);
+  }, [resumePollingFromStorage]);
+
+  const openTelegramBot = useCallback(() => {
+    if (!openUrl) return;
+    if (isMobileBrowser()) {
+      window.location.assign(openUrl);
+      return;
+    }
+    window.open(openUrl, "_blank", "noopener,noreferrer");
+  }, [openUrl]);
 
   const devLogin = async () => {
     setError("");
@@ -234,18 +288,26 @@ export function TelegramBrowserLogin({
         </li>
         <li>В Telegram нажмите <strong className="text-foreground">Запустить / Start</strong>.</li>
         <li>Дождитесь ответа бота «Готово…».</li>
-        <li>Вернитесь в <strong className="text-foreground">эту вкладку</strong> браузера.</li>
+        <li>
+          Вернитесь в <strong className="text-foreground">Safari или Chrome</strong> на вкладку с этой страницей (на
+          телефоне — переключатель приложений, не новый поиск сайта).
+        </li>
       </ol>
 
       {openUrl ? (
-        <a
-          href={openUrl}
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          type="button"
+          onClick={openTelegramBot}
           className="btn-primary flex min-h-[48px] w-full items-center justify-center touch-manipulation text-center"
         >
           Открыть бота в Telegram
-        </a>
+        </button>
+      ) : null}
+
+      {isMobileBrowser() && phase === "waiting" ? (
+        <p className="text-center text-xs text-muted">
+          После «Готово» в боте откройте браузер снова и нажмите «Проверить вход», если страница не обновилась сама.
+        </p>
       ) : null}
 
       {phase === "waiting" ? (
@@ -262,7 +324,14 @@ export function TelegramBrowserLogin({
       {error ? <p className="text-center text-sm font-medium text-foreground/85">{error}</p> : null}
 
       <div className="grid gap-2">
-        <button type="button" className="btn-secondary w-full" onClick={() => void pollOnce()}>
+        <button
+          type="button"
+          className="btn-secondary w-full"
+          onClick={() => {
+            resumePollingFromStorage();
+            void pollOnce();
+          }}
+        >
           Я нажал Start — проверить вход
         </button>
         <button type="button" className="btn-secondary w-full" onClick={() => void beginBrowserLogin(true)}>

@@ -40,21 +40,17 @@ export async function POST(req: Request) {
         where: { userId: user.id },
         data: { arrivedAt }
       });
-      return NextResponse.json({
-        ok: true,
-        updated: true,
-        arrivedAt: arrivedAt.toISOString()
+    } else {
+      await prisma.workplaceArrival.create({
+        data: { userId: user.id, arrivedAt }
       });
     }
 
-    await prisma.workplaceArrival.create({
-      data: { userId: user.id, arrivedAt }
-    });
     await notifyAdminsShiftArrival({ employeeName: user.name, arrivedAt });
 
     return NextResponse.json({
       ok: true,
-      updated: false,
+      updated: Boolean(existing),
       arrivedAt: arrivedAt.toISOString()
     });
   } catch (e) {

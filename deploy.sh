@@ -38,5 +38,18 @@ fi
 
 pm2 save
 
+set -a
+# shellcheck disable=SC1091
+source .env
+set +a
+if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
+  if command -v jq >/dev/null 2>&1; then
+    echo "==> Telegram webhook"
+    bash scripts/telegram-set-webhook.sh
+  else
+    echo "WARN: jq не установлен — выполните: ./scripts/telegram-set-webhook.sh"
+  fi
+fi
+
 echo "==> Deploy complete"
 pm2 status "${APP_NAME}"

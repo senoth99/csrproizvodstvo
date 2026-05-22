@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashToken } from "@/lib/auth";
+import { resolveAppPublicBaseUrl } from "@/lib/appUrl";
 import { extractTelegramLoginToken, telegramAnswerCallback, telegramSendMessage } from "@/lib/telegramBotHelpers";
 import { getTelegramAllowanceRole, type TgMiniAppUser } from "@/lib/telegramSignIn";
 
@@ -106,11 +107,19 @@ export async function POST(req: Request) {
 
     const text = msg.text?.trim() ?? "";
     const handled = await handleLoginMessage(msg);
-    if (!handled && /^\/start(?:@\w+)?$/i.test(text)) {
-      await telegramSendMessage(
-        msg.chat.id,
-        "Откройте вход на сайте в браузере и нажмите «Открыть бота в Telegram» — нужна ссылка с сайта, не меню Start в чате."
-      );
+    if (!handled) {
+      if (/^\/start(?:@\w+)?$/i.test(text)) {
+        const loginUrl = `${resolveAppPublicBaseUrl()}/telegram/login`;
+        await telegramSendMessage(
+          msg.chat.id,
+          `Вход с сайта: откройте ${loginUrl} и нажмите «Открыть бота в Telegram». Обычный /start в чате вход не включает.`
+        );
+      } else if (text.startsWith("/")) {
+        await telegramSendMessage(
+          msg.chat.id,
+          "Команда не распознана. Для входа используйте ссылку с сайта (раздел «Вход через Telegram»)."
+        );
+      }
     }
     return NextResponse.json({ ok: true });
   } catch (e) {
