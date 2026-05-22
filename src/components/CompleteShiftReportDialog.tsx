@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
-import { Camera, ClipboardCheck } from "lucide-react";
+import { Camera, ClipboardCheck, ImagePlus } from "lucide-react";
 import { submitShiftReport } from "@/app/actions";
 import { compressImageFile } from "@/lib/clientImageCompress";
 
@@ -34,7 +34,8 @@ export function CompleteShiftReportDialog({
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
   const [mounted, setMounted] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -103,7 +104,8 @@ export function CompleteShiftReportDialog({
       setError(err instanceof Error ? err.message : "Не удалось обработать фото.");
     } finally {
       setPhotoUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      if (cameraInputRef.current) cameraInputRef.current.value = "";
+      if (galleryInputRef.current) galleryInputRef.current.value = "";
     }
   };
 
@@ -139,7 +141,7 @@ export function CompleteShiftReportDialog({
                     return;
                   }
                   if (!workplacePhotoPath) {
-                    setError("Сделайте фото рабочего места перед отправкой.");
+                    setError("Добавьте фото рабочего места перед отправкой.");
                     return;
                   }
                   start(async () => {
@@ -175,7 +177,7 @@ export function CompleteShiftReportDialog({
                 <div className="space-y-3">
                   <p className="text-sm font-medium text-foreground">Фото рабочего места</p>
                   <input
-                    ref={fileInputRef}
+                    ref={cameraInputRef}
                     type="file"
                     accept="image/*"
                     capture="environment"
@@ -185,18 +187,37 @@ export function CompleteShiftReportDialog({
                     disabled={pending || photoUploading}
                     onChange={(e) => void handlePhotoSelected(e.target.files?.[0])}
                   />
-                  <div className="flex flex-wrap items-center gap-3">
+                  <input
+                    ref={galleryInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="sr-only"
+                    aria-hidden
+                    tabIndex={-1}
+                    disabled={pending || photoUploading}
+                    onChange={(e) => void handlePhotoSelected(e.target.files?.[0])}
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
                       className="btn-secondary inline-flex items-center gap-2"
                       disabled={pending || photoUploading}
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={() => cameraInputRef.current?.click()}
                     >
                       <Camera size={16} aria-hidden />
                       {photoUploading ? "Загружаем…" : "Сфоткать"}
                     </button>
+                    <button
+                      type="button"
+                      className="btn-secondary inline-flex items-center gap-2"
+                      disabled={pending || photoUploading}
+                      onClick={() => galleryInputRef.current?.click()}
+                    >
+                      <ImagePlus size={16} aria-hidden />
+                      Из галереи
+                    </button>
                     {workplacePhotoPath ? (
-                      <span className="text-xs text-muted">Фото загружено</span>
+                      <span className="w-full text-xs text-muted sm:w-auto">Фото загружено</span>
                     ) : null}
                   </div>
                   {photoPreviewUrl ? (

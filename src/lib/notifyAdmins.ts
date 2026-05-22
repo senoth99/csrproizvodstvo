@@ -2,7 +2,7 @@ import { readFile } from "fs/promises";
 import { AppNotificationType, UserRole } from "@/lib/enums";
 import { notifyUserAppAndTelegram } from "@/lib/notifyDispatch";
 import { prisma } from "@/lib/prisma";
-import { telegramSendPhoto } from "@/lib/telegramBotHelpers";
+import { telegramSendMessage, telegramSendPhoto } from "@/lib/telegramBotHelpers";
 import { formatDateRu } from "@/lib/utils";
 import { resolveReportPhotoDiskPath } from "@/lib/workplaceReportPhoto";
 
@@ -126,6 +126,69 @@ export async function notifyAdminsEmployeeShiftChange(input: {
   });
 }
 
+const TELEGRAM_PHOTO_CAPTION_MAX = 1024;
+const TELEGRAM_MESSAGE_MAX = 4090;
+
+function chunkTelegramText(text: string, maxLen: number): string[] {
+  const chunks: string[] = [];
+  for (let i = 0; i < text.length; i += maxLen) {
+    chunks.push(text.slice(i, i + maxLen));
+  }
+  return chunks;
+}
+
+/** Подпись к фото (≤1024) + остаток отчёта отдельными сообщениями (≤4090). */
+function buildShiftReportTelegramParts(header: string, reportText: string): {
+  caption: string;
+  followUpMessages: string[];
+} {
+  const full = `${header}\n\n${reportText}`;
+  if (full.length <= TELEGRAM_PHOTO_CAPTION_MAX) {
+    return { caption: full, followUpMessages: [] };
+  }
+
+  const prefix = `${header}\n\n`;
+  const room = TELEGRAM_PHOTO_CAPTION_MAX - prefix.length - 1;
+  if (room <= 0) {
+    return {
+      caption: header.slice(0, TELEGRAM_PHOTO_CAPTION_MAX),
+      followUpMessages: chunkTelegramText(reportText, TELEGRAM_MESSAGE_MAX)
+    };
+  }
+
+  const inCaption = reportText.slice(0, room);
+  const rest = reportText.slice(room);
+  const caption = rest.length ? `${prefix}${inCaption}…` : `${prefix}${inCaption}`;
+  return {
+    caption,
+    followUpMessages: rest.length ? chunkTelegramText(rest, TELEGRAM_MESSAGE_MAX) : []
+  };
+}
+
+async function sendShiftReportTelegram(
+  chatId: number,
+  photoBytes: Buffer | null,
+  header: string,
+  reportText: string
+) {
+  const { caption, followUpMessages } = buildShiftReportTelegramParts(header, reportText);
+
+  if (photoBytes?.length) {
+    await telegramSendPhoto(chatId, photoBytes, caption);
+  } else {
+    const chunks = chunkTelegramText(`${header}\n\n${reportText}`, TELEGRAM_MESSAGE_MAX);
+    await telegramSendMessage(chatId, chunks[0] ?? header);
+    for (let i = 1; i < chunks.length; i++) {
+      await telegramSendMessage(chatId, chunks[i]!);
+    }
+    return;
+  }
+
+  for (const part of followUpMessages) {
+    await telegramSendMessage(chatId, part);
+  }
+}
+
 /** Новый отчёт по смене с фото — ADMIN/SUPER_ADMIN (колокольчик + фото в Telegram). */
 export async function notifyAdminsShiftReportSubmitted(input: {
   reportId: string;
@@ -134,11 +197,10 @@ export async function notifyAdminsShiftReportSubmitted(input: {
   brief: string;
   text: string;
 }) {
-  const preview =
-    input.text.length > 280 ? `${input.text.slice(0, 277).trim()}…` : input.text.trim();
+  const reportText = input.text.trim();
   const title = "Новый отчёт по смене";
-  const body = `${input.employeeName}\n${input.brief}\n\n${preview}`;
-  const telegramCaption = `📋 Отчёт по смене\n${input.employeeName}\n${input.brief}\n\n${preview}`.slice(0, 1024);
+  const body = `${input.employeeName}\n${input.brief}\n\n${reportText}`;
+  const telegramHeader = `📋 Отчёт по смене\n${input.employeeName}\n${input.brief}`;
 
   const userIds = await getAdminRoleUserIds();
   if (!userIds.length) return;
@@ -161,18 +223,17 @@ export async function notifyAdminsShiftReportSubmitted(input: {
         title,
         body,
         payload: { reportId: input.reportId, shiftId: input.shiftId },
-        telegramText: telegramCaption,
-        skipTelegram: Boolean(photoBytes?.length)
+        skipTelegram: true
       });
 
-      if (!photoBytes?.length) return;
       const row = await prisma.user.findUnique({
         where: { id: userId },
         select: { telegramId: true }
       });
       const chatId = row?.telegramId != null && row.telegramId !== "" ? Number(row.telegramId) : NaN;
       if (!Number.isFinite(chatId)) return;
-      await telegramSendPhoto(chatId, photoBytes, telegramCaption);
+
+      await sendShiftReportTelegram(chatId, photoBytes, telegramHeader, reportText);
     })
   );
 }
