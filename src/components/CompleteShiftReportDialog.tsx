@@ -1,10 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
-import { ClipboardCheck } from "lucide-react";
+import { Camera, ClipboardCheck } from "lucide-react";
 import { submitShiftReport } from "@/app/actions";
+import { compressImageFile } from "@/lib/clientImageCompress";
 
 function formatShiftReportSubmitError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
@@ -27,9 +28,13 @@ export function CompleteShiftReportDialog({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
+  const [workplacePhotoPath, setWorkplacePhotoPath] = useState("");
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState("");
+  const [photoUploading, setPhotoUploading] = useState(false);
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
   const [mounted, setMounted] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -44,9 +49,62 @@ export function CompleteShiftReportDialog({
     };
   }, [open]);
 
+  const resetPhoto = () => {
+    if (photoPreviewUrl.startsWith("blob:")) URL.revokeObjectURL(photoPreviewUrl);
+    setPhotoPreviewUrl("");
+    setWorkplacePhotoPath("");
+  };
+
   const close = () => {
     setOpen(false);
     setError("");
+    setText("");
+    resetPhoto();
+  };
+
+  const handlePhotoSelected = async (file: File | undefined) => {
+    if (!file) return;
+    setError("");
+    setPhotoUploading(true);
+    if (photoPreviewUrl.startsWith("blob:")) URL.revokeObjectURL(photoPreviewUrl);
+    try {
+      const blob = await compressImageFile(file);
+      const preview = URL.createObjectURL(blob);
+      setPhotoPreviewUrl(preview);
+      const form = new FormData();
+      form.append("shiftId", shiftId);
+      form.append("file", new File([blob], "workplace.jpg", { type: "image/jpeg" }));
+      const res = await fetch("/api/reports/workplace-photo", { method: "POST", body: form });
+      const body = (await res.json().catch(() => ({}))) as { path?: string; error?: string };
+      if (!res.ok) {
+        URL.revokeObjectURL(preview);
+        setPhotoPreviewUrl("");
+        setWorkplacePhotoPath("");
+        const errKey = body.error ?? "upload_failed";
+        if (errKey === "file_too_large") {
+          setError("Фото слишком большое (макс. 3 МБ).");
+        } else if (errKey === "unauthorized") {
+          setError("Нужна авторизация. Обновите страницу и войдите снова.");
+        } else {
+          setError("Не удалось загрузить фото. Попробуйте ещё раз.");
+        }
+        return;
+      }
+      if (!body.path) {
+        URL.revokeObjectURL(preview);
+        setPhotoPreviewUrl("");
+        setError("Не удалось загрузить фото.");
+        return;
+      }
+      setWorkplacePhotoPath(body.path);
+    } catch (err) {
+      setPhotoPreviewUrl("");
+      setWorkplacePhotoPath("");
+      setError(err instanceof Error ? err.message : "Не удалось обработать фото.");
+    } finally {
+      setPhotoUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   const overlay =
@@ -80,9 +138,13 @@ export function CompleteShiftReportDialog({
                     setError("Напишите чуть подробнее — минимум 5 символов.");
                     return;
                   }
+                  if (!workplacePhotoPath) {
+                    setError("Сделайте фото рабочего места перед отправкой.");
+                    return;
+                  }
                   start(async () => {
                     try {
-                      await submitShiftReport({ shiftId, text });
+                      await submitShiftReport({ shiftId, text, workplacePhotoPath });
                       setText("");
                       close();
                       router.refresh();
@@ -110,13 +172,53 @@ export function CompleteShiftReportDialog({
                   />
                 </div>
 
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-foreground">Фото рабочего места</p>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="sr-only"
+                    aria-hidden
+                    tabIndex={-1}
+                    disabled={pending || photoUploading}
+                    onChange={(e) => void handlePhotoSelected(e.target.files?.[0])}
+                  />
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      className="btn-secondary inline-flex items-center gap-2"
+                      disabled={pending || photoUploading}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <Camera size={16} aria-hidden />
+                      {photoUploading ? "Загружаем…" : "Сфоткать"}
+                    </button>
+                    {workplacePhotoPath ? (
+                      <span className="text-xs text-muted">Фото загружено</span>
+                    ) : null}
+                  </div>
+                  {photoPreviewUrl ? (
+                    <img
+                      src={photoPreviewUrl}
+                      alt="Превью рабочего места"
+                      className="max-h-48 w-full rounded-lg border border-border object-cover"
+                    />
+                  ) : null}
+                </div>
+
                 {error ? <p className="text-sm font-medium text-foreground/85">{error}</p> : null}
 
                 <div className="grid w-full grid-cols-2 gap-3 pt-1 [grid-template-columns:repeat(2,minmax(0,1fr))]">
-                  <button type="button" className="btn-secondary w-full" disabled={pending} onClick={close}>
+                  <button type="button" className="btn-secondary w-full" disabled={pending || photoUploading} onClick={close}>
                     Отменить
                   </button>
-                  <button type="submit" className="btn-primary w-full" disabled={pending}>
+                  <button
+                    type="submit"
+                    className="btn-primary w-full"
+                    disabled={pending || photoUploading || !workplacePhotoPath}
+                  >
                     {pending ? "Отправляем…" : "Завершить"}
                   </button>
                 </div>

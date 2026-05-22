@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { addDays } from "date-fns";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, QrCode } from "lucide-react";
 import { MeProfileCard } from "@/components/MeProfileCard";
 import { MyShiftsSection } from "@/components/MyShiftsSection";
 import { ServiceUnavailable } from "@/components/ServiceUnavailable";
@@ -38,8 +38,21 @@ export default async function MePage() {
           initialLastName={user.lastName ?? ""}
         />
         <Link
-          href="/me/balance"
+          href="/check-in"
           className="-mt-2 card flex min-h-[52px] w-full max-w-full touch-manipulation items-center justify-between gap-3 transition-colors hover:bg-foreground/[0.04] active:opacity-90"
+          aria-label="Отметить приход на производство"
+        >
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-transparent">
+              <QrCode className="h-5 w-5 text-muted" aria-hidden />
+            </span>
+            <p className="text-lg font-semibold tracking-tight">Отметить приход</p>
+          </div>
+          <ChevronRight className="h-6 w-6 shrink-0 text-muted" aria-hidden />
+        </Link>
+        <Link
+          href="/me/balance"
+          className="card flex min-h-[52px] w-full max-w-full touch-manipulation items-center justify-between gap-3 transition-colors hover:bg-foreground/[0.04] active:opacity-90"
           aria-label="Открыть баланс и историю операций"
         >
           <div>

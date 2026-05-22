@@ -6,18 +6,6 @@ import { AuthScreenShell } from "@/components/AuthScreenShell";
 import type { AccessDeniedPayload } from "@/lib/accessDenied";
 import { isAccessDeniedResponse } from "@/lib/accessDenied";
 
-declare global {
-  interface Window {
-    Telegram?: {
-      WebApp?: {
-        ready: () => void;
-        expand: () => void;
-        initData: string;
-      };
-    };
-  }
-}
-
 const POLL_MS = 50;
 /** После загрузки SDK: ~4 с на появление initData в WebView. */
 const POLL_MAX = 80;

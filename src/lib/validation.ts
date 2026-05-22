@@ -41,7 +41,8 @@ export const updateShiftSchema = shiftSchema.partial().extend({
 
 export const reportSchema = z.object({
   shiftId: z.string().cuid(),
-  text: z.string().min(5)
+  text: z.string().min(5),
+  workplacePhotoPath: z.string().min(1)
 });
 
 export const updateReportSchema = z.object({

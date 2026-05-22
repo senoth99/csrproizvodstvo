@@ -1,10 +1,24 @@
 import { AppNotificationType, UserRole } from "@/lib/enums";
 import { notifyUserAppAndTelegram } from "@/lib/notifyDispatch";
 import { prisma } from "@/lib/prisma";
+import { formatDateRu } from "@/lib/utils";
 
 type EmployeeShiftNotifyType =
   | typeof AppNotificationType.SHIFT_ADDED_BY_EMPLOYEE
   | typeof AppNotificationType.SHIFT_REMOVED_BY_EMPLOYEE;
+
+/** Только ADMIN и SUPER_ADMIN (без isManager). */
+export async function getAdminRoleUserIds(excludeUserIds: string[] = []): Promise<string[]> {
+  const exclude = new Set(excludeUserIds);
+  const rows = await prisma.user.findMany({
+    where: {
+      isActive: true,
+      role: { in: [UserRole.ADMIN, UserRole.SUPER_ADMIN] }
+    },
+    select: { id: true }
+  });
+  return rows.map((r) => r.id).filter((id) => !exclude.has(id));
+}
 
 /** Кому слать обзорные уведомления по графику: роли ADMIN/SUPER_ADMIN и руководители (isManager). */
 export async function getScheduleMonitorUserIds(excludeUserIds: string[] = []): Promise<string[]> {
@@ -69,4 +83,25 @@ export async function notifyAdminsEmployeeShiftChange(input: {
     payload: input.payload,
     excludeUserIds: input.excludeUserIds
   });
+}
+
+/** Сотрудник впервые отметился на производстве (QR). */
+export async function notifyAdminsShiftArrival(input: { employeeName: string; arrivedAt: Date }) {
+  const timeStr = formatDateRu(input.arrivedAt, "dd.MM.yyyy HH:mm");
+  const body = `${input.employeeName} — ${timeStr}`;
+  const telegramText = `🏭 Приход на смену\n${input.employeeName}\n${timeStr}`;
+  const userIds = await getAdminRoleUserIds();
+  if (!userIds.length) return;
+
+  await Promise.all(
+    userIds.map((userId) =>
+      notifyUserAppAndTelegram({
+        userId,
+        type: AppNotificationType.SHIFT_ARRIVAL,
+        title: "Приход на смену",
+        body,
+        telegramText
+      })
+    )
+  );
 }

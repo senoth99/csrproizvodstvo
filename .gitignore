@@ -7,3 +7,6 @@ coverage
 # миграции нужны для deploy; старый sqlite-файл не коммитим
 prisma/dev.db
 prisma/*.db
+public/uploads/*
+!public/uploads/reports/
+!public/uploads/reports/.gitkeep

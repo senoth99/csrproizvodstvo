@@ -1,5 +1,7 @@
 "use server";
 
+import { existsSync } from "fs";
+import path from "path";
 import { Prisma } from "@prisma/client";
 import { addHours, isBefore, parseISO } from "date-fns";
 import { revalidatePath } from "next/cache";
@@ -770,6 +772,15 @@ export async function submitShiftReport(input: unknown) {
   if (shift.status === ShiftStatus.CANCELLED) throw new Error("Смена отменена, отчёт недоступен.");
   if (shift.report?.status === ShiftReportStatus.ACCEPTED) throw new Error("Отчёт уже принят.");
 
+  const expectedPhotoPath = `/uploads/reports/${data.shiftId}.jpg`;
+  if (data.workplacePhotoPath !== expectedPhotoPath) {
+    throw new Error("Некорректный путь к фото рабочего места.");
+  }
+  const photoDiskPath = path.join(process.cwd(), "public", "uploads", "reports", `${data.shiftId}.jpg`);
+  if (!existsSync(photoDiskPath)) {
+    throw new Error("Фото рабочего места не найдено. Сделайте снимок и загрузите снова.");
+  }
+
   const { reportIdForPath } = await prisma.$transaction(async (tx) => {
     // Только поля, которые есть у любого Prisma Client: без status/updatedAt — иначе «Unknown argument»
     // на старых клиентах; updatedAt подставляет БД (@default + @updatedAt в schema).
@@ -778,10 +789,12 @@ export async function submitShiftReport(input: unknown) {
       create: {
         shiftId: data.shiftId,
         userId: user.id,
-        text: data.text.trim()
+        text: data.text.trim(),
+        workplacePhotoPath: data.workplacePhotoPath
       },
       update: {
-        text: data.text.trim()
+        text: data.text.trim(),
+        workplacePhotoPath: data.workplacePhotoPath
       }
     });
 

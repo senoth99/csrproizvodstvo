@@ -35,6 +35,15 @@ model User {
   updatedShifts  Shift[]       @relation("ShiftUpdatedBy")
   appNotifications AppNotification[]
   acceptedShiftReports ShiftReport[] @relation("ShiftReportAcceptedBy")
+  workplaceArrival   WorkplaceArrival?
+}
+
+/// Последняя отметка прихода на производство (QR); повторный скан обновляет `arrivedAt`.
+model WorkplaceArrival {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  arrivedAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model AllowedTelegramUser {
@@ -174,6 +183,8 @@ model ShiftReport {
   shiftId            String    @unique
   userId             String
   text               String
+  /// Путь от корня сайта, например `/uploads/reports/abc.jpg`
+  workplacePhotoPath String?
   status             String    @default("PENDING_REVIEW")
   accrualAmountCents Int?
   /// Начисление «за выход» (копейки); вместе с `accrualWorkCents` даёт сумму `accrualAmountCents`.

@@ -94,6 +94,17 @@ export default async function ReportDetailPage({ params }: { params: Promise<{ i
             </div>
           ) : null}
 
+          {report.workplacePhotoPath ? (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-foreground">Фото рабочего места</p>
+              <img
+                src={report.workplacePhotoPath}
+                alt="Рабочее место на смене"
+                className="max-h-80 w-full rounded-lg border border-border object-cover"
+              />
+            </div>
+          ) : null}
+
           <ReportTextEditor
             reportId={report.id}
             initialText={report.text}
