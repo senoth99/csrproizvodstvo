@@ -21,6 +21,33 @@ export function extractTelegramLoginToken(text: string | undefined): string | nu
 
 export type TelegramInlineKeyboard = { text: string; callback_data: string }[][];
 
+export async function telegramSendPhoto(
+  chatId: number,
+  photoBytes: Buffer,
+  caption?: string
+): Promise<void> {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return;
+  try {
+    const form = new FormData();
+    form.append("chat_id", String(chatId));
+    form.append(
+      "photo",
+      new Blob([new Uint8Array(photoBytes)], { type: "image/jpeg" }),
+      "workplace.jpg"
+    );
+    if (caption?.trim()) {
+      form.append("caption", caption.trim().slice(0, 1024));
+    }
+    await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+      method: "POST",
+      body: form
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
 export async function telegramSendMessage(
   chatId: number,
   text: string,

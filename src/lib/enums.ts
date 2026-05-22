@@ -32,7 +32,9 @@ export const AppNotificationType = {
   /** Сотрудник сам снял смену с графика */
   SHIFT_REMOVED_BY_EMPLOYEE: "SHIFT_REMOVED_BY_EMPLOYEE",
   /** Сотрудник отметился на производстве (QR) */
-  SHIFT_ARRIVAL: "SHIFT_ARRIVAL"
+  SHIFT_ARRIVAL: "SHIFT_ARRIVAL",
+  /** Сотрудник отправил отчёт по смене (с фото) */
+  SHIFT_REPORT_SUBMITTED: "SHIFT_REPORT_SUBMITTED"
 } as const;
 
 export type AppNotificationType = (typeof AppNotificationType)[keyof typeof AppNotificationType];

@@ -10,6 +10,7 @@ import { catchDb } from "@/lib/dbBoundary";
 import { getCurrentUser, requireAuth } from "@/lib/auth";
 import { ShiftReportStatus } from "@/lib/enums";
 import { formatDateRu, formatMoneyRu, isoFromWeekDay, weekDays } from "@/lib/utils";
+import { normalizeReportPhotoPath } from "@/lib/workplaceReportPhoto";
 
 export default async function ReportDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requireAuth();
@@ -31,6 +32,8 @@ export default async function ReportDetailPage({ params }: { params: Promise<{ i
       !isAdmin &&
       report.status === ShiftReportStatus.ACCEPTED &&
       report.accrualAmountCents != null;
+
+    const photoSrc = normalizeReportPhotoPath(report.workplacePhotoPath, report.shiftId);
 
     return (
       <div className="space-y-4">
@@ -94,11 +97,11 @@ export default async function ReportDetailPage({ params }: { params: Promise<{ i
             </div>
           ) : null}
 
-          {report.workplacePhotoPath ? (
+          {photoSrc ? (
             <div className="space-y-2">
               <p className="text-sm font-medium text-foreground">Фото рабочего места</p>
               <img
-                src={report.workplacePhotoPath}
+                src={photoSrc}
                 alt="Рабочее место на смене"
                 className="max-h-80 w-full rounded-lg border border-border object-cover"
               />

@@ -1,7 +1,5 @@
 "use server";
 
-import { existsSync } from "fs";
-import path from "path";
 import { Prisma } from "@prisma/client";
 import { addHours, isBefore, parseISO } from "date-fns";
 import { revalidatePath } from "next/cache";
@@ -31,11 +29,16 @@ import { notifyUserAppAndTelegram } from "@/lib/notifyDispatch";
 import {
   notifyAdminRoleUsers,
   notifyAdminsEmployeeShiftChange,
+  notifyAdminsShiftReportSubmitted,
   notifyScheduleAdmins
 } from "@/lib/notifyAdmins";
 import { describeShiftBrief } from "@/lib/shiftBrief";
 import { prismaUserListNameSelect, prismaUserShiftBoardSelect } from "@/lib/prismaSafeUserInclude";
 import { isoFromWeekDay } from "@/lib/utils";
+import {
+  getReportPhotoApiPath,
+  resolveReportPhotoDiskPath
+} from "@/lib/workplaceReportPhoto";
 import { z } from "zod";
 
 function normalizedTelegramSuperAdminUsername(): string {
@@ -818,12 +821,12 @@ export async function submitShiftReport(input: unknown) {
   if (shift.status === ShiftStatus.CANCELLED) throw new Error("Смена отменена, отчёт недоступен.");
   if (shift.report?.status === ShiftReportStatus.ACCEPTED) throw new Error("Отчёт уже принят.");
 
-  const expectedPhotoPath = `/uploads/reports/${data.shiftId}.jpg`;
-  if (data.workplacePhotoPath !== expectedPhotoPath) {
+  const expectedPhotoPath = getReportPhotoApiPath(data.shiftId);
+  const legacyPhotoPath = `/uploads/reports/${data.shiftId}.jpg`;
+  if (data.workplacePhotoPath !== expectedPhotoPath && data.workplacePhotoPath !== legacyPhotoPath) {
     throw new Error("Некорректный путь к фото рабочего места.");
   }
-  const photoDiskPath = path.join(process.cwd(), "public", "uploads", "reports", `${data.shiftId}.jpg`);
-  if (!existsSync(photoDiskPath)) {
+  if (!resolveReportPhotoDiskPath(data.shiftId)) {
     throw new Error("Фото рабочего места не найдено. Сделайте снимок и загрузите снова.");
   }
 
@@ -836,11 +839,11 @@ export async function submitShiftReport(input: unknown) {
         shiftId: data.shiftId,
         userId: user.id,
         text: data.text.trim(),
-        workplacePhotoPath: data.workplacePhotoPath
+        workplacePhotoPath: expectedPhotoPath
       },
       update: {
         text: data.text.trim(),
-        workplacePhotoPath: data.workplacePhotoPath
+        workplacePhotoPath: expectedPhotoPath
       }
     });
 
@@ -863,6 +866,30 @@ export async function submitShiftReport(input: unknown) {
     entityId: shift.id,
     payload: { reportId: reportIdForPath }
   });
+
+  const reportId = reportIdForPath;
+  const shiftId = data.shiftId;
+  const employeeName = user.name;
+  const reportText = data.text.trim();
+  after(async () => {
+    try {
+      const row = await prisma.shiftReport.findUnique({
+        where: { id: reportId },
+        include: { shift: { include: { zone: true } } }
+      });
+      if (!row) return;
+      await notifyAdminsShiftReportSubmitted({
+        reportId,
+        shiftId,
+        employeeName,
+        brief: describeShiftBrief(row.shift),
+        text: reportText
+      });
+    } catch (e) {
+      console.error("[submitShiftReport] уведомление админам не отправлено:", e);
+    }
+  });
+
   revalidatePath("/reports");
   revalidatePath(`/reports/${reportIdForPath}`);
   revalidatePath("/me");

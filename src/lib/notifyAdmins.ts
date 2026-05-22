@@ -1,7 +1,11 @@
+import { readFile } from "fs/promises";
 import { AppNotificationType, UserRole } from "@/lib/enums";
+import { resolveAppPublicBaseUrl } from "@/lib/appUrl";
 import { notifyUserAppAndTelegram } from "@/lib/notifyDispatch";
 import { prisma } from "@/lib/prisma";
+import { telegramSendPhoto } from "@/lib/telegramBotHelpers";
 import { formatDateRu } from "@/lib/utils";
+import { resolveReportPhotoDiskPath } from "@/lib/workplaceReportPhoto";
 
 type EmployeeShiftNotifyType =
   | typeof AppNotificationType.SHIFT_ADDED_BY_EMPLOYEE
@@ -121,6 +125,62 @@ export async function notifyAdminsEmployeeShiftChange(input: {
     payload: input.payload,
     excludeUserIds: input.excludeUserIds
   });
+}
+
+/** Новый отчёт по смене с фото — ADMIN/SUPER_ADMIN (колокольчик + фото в Telegram). */
+export async function notifyAdminsShiftReportSubmitted(input: {
+  reportId: string;
+  shiftId: string;
+  employeeName: string;
+  brief: string;
+  text: string;
+}) {
+  const preview =
+    input.text.length > 280 ? `${input.text.slice(0, 277).trim()}…` : input.text.trim();
+  const title = "Новый отчёт по смене";
+  const body = `${input.employeeName}\n${input.brief}\n\n${preview}`;
+  const reportUrl = `${resolveAppPublicBaseUrl()}/reports/${input.reportId}`;
+  const telegramCaption =
+    `📋 Отчёт по смене\n${input.employeeName}\n${input.brief}\n\n${preview}\n\nОткрыть: ${reportUrl}`.slice(
+      0,
+      1024
+    );
+
+  const userIds = await getAdminRoleUserIds();
+  if (!userIds.length) return;
+
+  const photoPath = resolveReportPhotoDiskPath(input.shiftId);
+  let photoBytes: Buffer | null = null;
+  if (photoPath) {
+    try {
+      photoBytes = await readFile(photoPath);
+    } catch {
+      photoBytes = null;
+    }
+  }
+
+  await Promise.all(
+    userIds.map(async (userId) => {
+      await notifyUserAppAndTelegram({
+        userId,
+        type: AppNotificationType.SHIFT_REPORT_SUBMITTED,
+        title,
+        body,
+        payload: { reportId: input.reportId, shiftId: input.shiftId },
+        telegramText: telegramCaption,
+        skipTelegram: Boolean(photoBytes?.length)
+      });
+
+      if (!photoBytes?.length) return;
+      const row = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { telegramId: true }
+      });
+      const chatId = row?.telegramId != null && row.telegramId !== "" ? Number(row.telegramId) : NaN;
+      if (!Number.isFinite(chatId)) return;
+      await telegramSendPhoto(chatId, photoBytes, telegramCaption);
+    })
+  );
 }
 
 /** Сотрудник впервые отметился на производстве (QR). */

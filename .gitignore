@@ -10,3 +10,5 @@ prisma/*.db
 public/uploads/*
 !public/uploads/reports/
 !public/uploads/reports/.gitkeep
+data/uploads/
+prisma/uploads/

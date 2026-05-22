@@ -1,20 +1,75 @@
-import { mkdirSync } from "fs";
-import { writeFile } from "fs/promises";
-import path from "path";
+import { readFile } from "fs/promises";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
-import { ShiftReportStatus, ShiftStatus } from "@/lib/enums";
+import { ShiftReportStatus, ShiftStatus, UserRole } from "@/lib/enums";
 import { prisma } from "@/lib/prisma";
+import {
+  getReportPhotoApiPath,
+  getReportPhotoDiskPath,
+  resolveReportPhotoDiskPath
+} from "@/lib/workplaceReportPhoto";
 
 const MAX_BYTES = 3 * 1024 * 1024;
+
+function userCanViewReportPhoto(
+  viewer: { id: string; role: string; isManager?: boolean | null },
+  shift: { userId: string }
+) {
+  if (shift.userId === viewer.id) return true;
+  return (
+    viewer.role === UserRole.ADMIN ||
+    viewer.role === UserRole.SUPER_ADMIN ||
+    Boolean(viewer.isManager)
+  );
+}
+
+export async function GET(req: Request) {
+  let user;
+  try {
+    user = await getCurrentUser();
+  } catch (e) {
+    console.error("[api/reports/workplace-photo GET] session", e);
+    return new NextResponse(null, { status: 503 });
+  }
+  if (!user) return new NextResponse(null, { status: 401 });
+
+  const url = new URL(req.url);
+  const parsed = z.string().cuid().safeParse(url.searchParams.get("shiftId"));
+  if (!parsed.success) return new NextResponse(null, { status: 400 });
+  const shiftId = parsed.data;
+
+  try {
+    const shift = await prisma.shift.findUnique({
+      where: { id: shiftId },
+      select: { userId: true }
+    });
+    if (!shift || !userCanViewReportPhoto(user, shift)) {
+      return new NextResponse(null, { status: 403 });
+    }
+
+    const diskPath = resolveReportPhotoDiskPath(shiftId);
+    if (!diskPath) return new NextResponse(null, { status: 404 });
+
+    const buf = await readFile(diskPath);
+    return new NextResponse(buf, {
+      headers: {
+        "Content-Type": "image/jpeg",
+        "Cache-Control": "private, max-age=3600"
+      }
+    });
+  } catch (e) {
+    console.error("[api/reports/workplace-photo GET]", e);
+    return new NextResponse(null, { status: 500 });
+  }
+}
 
 export async function POST(req: Request) {
   let user;
   try {
     user = await getCurrentUser();
   } catch (e) {
-    console.error("[api/reports/workplace-photo] session", e);
+    console.error("[api/reports/workplace-photo POST] session", e);
     return NextResponse.json({ error: "service_unavailable" }, { status: 503 });
   }
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -65,17 +120,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "report_accepted" }, { status: 400 });
     }
 
-    const relDir = path.join("uploads", "reports");
-    const absDir = path.join(process.cwd(), "public", relDir);
-    mkdirSync(absDir, { recursive: true });
-    const filename = `${shiftId}.jpg`;
-    const absPath = path.join(absDir, filename);
+    const absPath = getReportPhotoDiskPath(shiftId);
+    const { writeFile } = await import("fs/promises");
     await writeFile(absPath, buffer);
 
-    const webPath = `/${relDir.replace(/\\/g, "/")}/${filename}`;
-    return NextResponse.json({ path: webPath });
+    return NextResponse.json({ path: getReportPhotoApiPath(shiftId) });
   } catch (e) {
-    console.error("[api/reports/workplace-photo]", e);
+    console.error("[api/reports/workplace-photo POST]", e);
     return NextResponse.json({ error: "upload_failed" }, { status: 500 });
   }
 }
