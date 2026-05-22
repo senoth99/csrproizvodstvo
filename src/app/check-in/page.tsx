@@ -3,6 +3,7 @@
 import { X } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { WorkplaceQrCameraScanner } from "@/components/WorkplaceQrCameraScanner";
 import { formatDateRu, safeParseISO } from "@/lib/utils";
 
 function extractTokenFromScan(text: string): string | null {
@@ -22,7 +23,7 @@ function extractTokenFromScan(text: string): string | null {
 function CheckInPageInner() {
   const searchParams = useSearchParams();
   const autoSubmitted = useRef(false);
-  const [manualToken, setManualToken] = useState("");
+  const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState<{ arrivedAt: string } | null>(null);
@@ -30,6 +31,7 @@ function CheckInPageInner() {
   const submitCheckIn = useCallback(async (token: string) => {
     setBusy(true);
     setError("");
+    setScanning(false);
     try {
       const res = await fetch("/api/workplace/check-in", {
         method: "POST",
@@ -63,30 +65,24 @@ function CheckInPageInner() {
     }
   }, []);
 
+  const handleDecoded = useCallback(
+    (text: string) => {
+      const token = extractTokenFromScan(text);
+      if (!token) {
+        setError("Не удалось прочитать код. Наведите на QR со ссылкой на отметку.");
+        return;
+      }
+      void submitCheckIn(token);
+    },
+    [submitCheckIn]
+  );
+
   useEffect(() => {
     const k = searchParams.get("k")?.trim();
     if (!k || autoSubmitted.current) return;
     autoSubmitted.current = true;
     void submitCheckIn(k);
   }, [searchParams, submitCheckIn]);
-
-  const openQrScanner = () => {
-    const show = window.Telegram?.WebApp?.showScanQrPopup;
-    if (!show) {
-      setError("Сканер QR доступен в Telegram. Введите токен вручную (режим разработки).");
-      return;
-    }
-    setError("");
-    show({ text: "Наведите камеру на QR-код на производстве" }, (text) => {
-      const token = extractTokenFromScan(text);
-      if (!token) {
-        setError("Не удалось прочитать код. Отсканируйте QR со ссылкой на отметку.");
-        return false;
-      }
-      void submitCheckIn(token);
-      return true;
-    });
-  };
 
   const arrivedLabel = success
     ? formatDateRu(safeParseISO(success.arrivedAt), "dd.MM.yyyy HH:mm")
@@ -96,36 +92,41 @@ function CheckInPageInner() {
     <div className="mx-auto max-w-md space-y-4">
       <h1 className="text-2xl font-bold">Отметить приход</h1>
       <p className="text-sm text-muted">
-        Отсканируйте QR-код на производстве или откройте ссылку из QR, если вы уже вошли в приложение.
+        Наведите камеру на QR-код на производстве. После успешного скана появится подтверждение.
       </p>
 
-      <button
-        type="button"
-        onClick={openQrScanner}
-        disabled={busy}
-        className="btn-primary w-full min-h-[48px] touch-manipulation disabled:cursor-not-allowed disabled:opacity-70"
-      >
-        {busy ? "Отмечаем…" : "Сканировать QR"}
-      </button>
-
-      <div className="card space-y-2">
-        <p className="text-xs text-muted">Токен вручную (для разработки)</p>
-        <input
-          value={manualToken}
-          onChange={(e) => setManualToken(e.target.value)}
-          placeholder="Токен из ?k="
-          className="w-full"
-          autoComplete="off"
-        />
+      {!scanning ? (
         <button
           type="button"
-          disabled={busy || !manualToken.trim()}
-          onClick={() => void submitCheckIn(manualToken.trim())}
-          className="btn-secondary w-full disabled:cursor-not-allowed disabled:opacity-70"
+          onClick={() => {
+            setError("");
+            setScanning(true);
+          }}
+          disabled={busy}
+          className="btn-primary w-full min-h-[48px] touch-manipulation disabled:cursor-not-allowed disabled:opacity-70"
         >
-          Отправить токен
+          {busy ? "Отмечаем…" : "Сканировать QR"}
         </button>
-      </div>
+      ) : (
+        <div className="space-y-3">
+          <WorkplaceQrCameraScanner
+            active={scanning && !busy}
+            onDecoded={handleDecoded}
+            onError={(msg) => {
+              setScanning(false);
+              setError(msg);
+            }}
+          />
+          <button
+            type="button"
+            className="btn-secondary w-full"
+            disabled={busy}
+            onClick={() => setScanning(false)}
+          >
+            Закрыть камеру
+          </button>
+        </div>
+      )}
 
       {error ? <p className="text-sm font-medium text-foreground/90">{error}</p> : null}
 

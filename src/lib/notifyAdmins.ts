@@ -59,7 +59,33 @@ export async function notifyScheduleAdmins(input: {
   );
 }
 
-/** Сотрудник сам поставил / снял смену (график, форма). */
+/** Колокольчик + Telegram только ADMIN и SUPER_ADMIN. */
+export async function notifyAdminRoleUsers(input: {
+  type: string;
+  title: string;
+  body: string;
+  telegramText: string;
+  payload?: unknown;
+  excludeUserIds?: string[];
+}) {
+  const userIds = await getAdminRoleUserIds(input.excludeUserIds ?? []);
+  if (!userIds.length) return;
+
+  await Promise.all(
+    userIds.map((userId) =>
+      notifyUserAppAndTelegram({
+        userId,
+        type: input.type,
+        title: input.title,
+        body: input.body,
+        payload: input.payload,
+        telegramText: input.telegramText
+      })
+    )
+  );
+}
+
+/** Сотрудник сам поставил / снял смену (график, форма). Снятие — только ADMIN/SUPER_ADMIN в Telegram. */
 export async function notifyAdminsEmployeeShiftChange(input: {
   type: EmployeeShiftNotifyType;
   employeeName: string;
@@ -75,7 +101,19 @@ export async function notifyAdminsEmployeeShiftChange(input: {
     ? `📅 ${input.employeeName} записался на смену:\n${input.brief}`
     : `📅 ${input.employeeName} снял смену:\n${input.brief}`;
 
-  await notifyScheduleAdmins({
+  if (added) {
+    await notifyScheduleAdmins({
+      type: input.type,
+      title,
+      body,
+      telegramText,
+      payload: input.payload,
+      excludeUserIds: input.excludeUserIds
+    });
+    return;
+  }
+
+  await notifyAdminRoleUsers({
     type: input.type,
     title,
     body,

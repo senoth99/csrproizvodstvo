@@ -4,6 +4,8 @@
  *
  * Не перехватываем redirect()/`NEXT_REDIRECT` — иначе Next ломает навигацию и бывают некорректные ответы.
  */
+import { withSqliteRetry } from "@/lib/prismaRetry";
+
 export type DbResult<T> = { ok: true; data: T } | { ok: false; digest?: string };
 
 /** См. `next/dist/client/components/redirect-error`: digest начинается с `NEXT_REDIRECT`. */
@@ -24,7 +26,7 @@ export function isNextHttpAccessFallbackError(error: unknown): boolean {
 
 export async function catchDb<T>(scope: string, fn: () => Promise<T>): Promise<DbResult<T>> {
   try {
-    const data = await fn();
+    const data = await withSqliteRetry(fn);
     return { ok: true, data };
   } catch (e) {
     if (isNextRedirectError(e) || isNextHttpAccessFallbackError(e)) throw e;

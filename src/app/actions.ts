@@ -28,7 +28,11 @@ import {
 } from "@/lib/enums";
 import { canOpenManagerPanel } from "@/lib/managerPanel";
 import { notifyUserAppAndTelegram } from "@/lib/notifyDispatch";
-import { notifyAdminsEmployeeShiftChange, notifyScheduleAdmins } from "@/lib/notifyAdmins";
+import {
+  notifyAdminRoleUsers,
+  notifyAdminsEmployeeShiftChange,
+  notifyScheduleAdmins
+} from "@/lib/notifyAdmins";
 import { describeShiftBrief } from "@/lib/shiftBrief";
 import { prismaUserListNameSelect, prismaUserShiftBoardSelect } from "@/lib/prismaSafeUserInclude";
 import { isoFromWeekDay } from "@/lib/utils";
@@ -320,27 +324,46 @@ export async function toggleBrigadeAssignment(input: { brigadeId: string; dayOfW
   if (existingSameCell) {
     const removedBrief = describeShiftBrief(existingSameCell);
     await prisma.shift.delete({ where: { id: existingSameCell.id } });
-    if (actor.role === UserRole.EMPLOYEE) {
-      scheduleAdminsEmployeeShiftNotify({
-        type: AppNotificationType.SHIFT_REMOVED_BY_EMPLOYEE,
-        employeeName: actor.name,
-        brief: removedBrief,
-        payload: { shiftId: existingSameCell.id, userId: actor.id },
-        excludeUserIds: [actor.id]
-      });
-    }
+    scheduleAdminsEmployeeShiftNotify({
+      type: AppNotificationType.SHIFT_REMOVED_BY_EMPLOYEE,
+      employeeName: actor.name,
+      brief: removedBrief,
+      payload: { shiftId: existingSameCell.id, userId: actor.id },
+      excludeUserIds: [actor.id]
+    });
     revalidatePath("/schedule");
     revalidatePath("/me");
     return;
   }
 
+  const shiftsReplaced = await prisma.shift.findMany({
+    where: {
+      userId: actor.id,
+      weekStartDate,
+      dayOfWeek,
+      status: { in: [ShiftStatus.PLANNED, ShiftStatus.IN_PROGRESS] }
+    },
+    include: { zone: true }
+  });
+
   await prisma.shift.deleteMany({
     where: {
       userId: actor.id,
       weekStartDate,
-      dayOfWeek
+      dayOfWeek,
+      status: { in: [ShiftStatus.PLANNED, ShiftStatus.IN_PROGRESS] }
     }
   });
+
+  for (const replaced of shiftsReplaced) {
+    scheduleAdminsEmployeeShiftNotify({
+      type: AppNotificationType.SHIFT_REMOVED_BY_EMPLOYEE,
+      employeeName: actor.name,
+      brief: describeShiftBrief(replaced),
+      payload: { shiftId: replaced.id, userId: actor.id, replacedByBrigadeSwitch: true },
+      excludeUserIds: [actor.id]
+    });
+  }
 
   const shift = await prisma.shift.create({
     data: {
@@ -402,11 +425,22 @@ export async function managerAssignBrigadeShift(input: unknown) {
   });
   if (existingSameCell) return;
 
+  const shiftsReplaced = await prisma.shift.findMany({
+    where: {
+      userId: data.userId,
+      weekStartDate,
+      dayOfWeek: data.dayOfWeek,
+      status: { in: [ShiftStatus.PLANNED, ShiftStatus.IN_PROGRESS] }
+    },
+    include: { zone: true }
+  });
+
   await prisma.shift.deleteMany({
     where: {
       userId: data.userId,
       weekStartDate,
-      dayOfWeek: data.dayOfWeek
+      dayOfWeek: data.dayOfWeek,
+      status: { in: [ShiftStatus.PLANNED, ShiftStatus.IN_PROGRESS] }
     }
   });
 
@@ -446,6 +480,18 @@ export async function managerAssignBrigadeShift(input: unknown) {
   const selfAssigned = target.id === actor.id;
   after(async () => {
     try {
+      for (const replaced of shiftsReplaced) {
+        const removedBrief = describeShiftBrief(replaced);
+        await notifyAdminRoleUsers({
+          type: AppNotificationType.SHIFT_REMOVED_BY_EMPLOYEE,
+          title: "Смена снята с графика",
+          body: `${actor.name} снял смену с ${target.name}: ${removedBrief}.`,
+          telegramText: `📅 ${actor.name} снял смену — ${target.name}:\n${removedBrief}`,
+          payload: { shiftId: replaced.id, userId: target.id, replacedByManagerAssign: true },
+          excludeUserIds: [target.id]
+        });
+      }
+
       await notifyUserAppAndTelegram({
         userId: target.id,
         type: AppNotificationType.SHIFT_ASSIGNED_BY_MANAGER,
@@ -515,7 +561,7 @@ export async function managerRemoveShift(shiftId: string) {
           payload: { shiftId }
         });
       }
-      await notifyScheduleAdmins({
+      await notifyAdminRoleUsers({
         type: AppNotificationType.SHIFT_REMOVED_BY_EMPLOYEE,
         title: "Смена снята с графика",
         body:

@@ -68,6 +68,7 @@ export function BrigadeBoard({
   const router = useRouter();
   const [mode, setMode] = useState<BrigadeShiftLabel>("День");
   const [openBrigadeId, setOpenBrigadeId] = useState<string | null>(null);
+  const [boardError, setBoardError] = useState("");
   const [pickCtx, setPickCtx] = useState<PickCtx | null>(null);
   const [removeShift, setRemoveShift] = useState<ShiftWithUser | null>(null);
   const [sheetError, setSheetError] = useState<string | null>(null);
@@ -139,6 +140,11 @@ export function BrigadeBoard({
 
   return (
     <div className="space-y-4 animate-in">
+      {boardError ? (
+        <p className="rounded-lg border border-highlight/45 bg-highlight/12 px-3 py-2.5 text-sm text-foreground">
+          {boardError}
+        </p>
+      ) : null}
       <div className="sticky top-0 z-10 space-y-2.5 rounded-xl border border-border bg-card/95 p-3 shadow-sm backdrop-blur-md [-webkit-backdrop-filter:blur(10px)] sm:p-3.5">
         <h2 className="text-sm font-bold uppercase tracking-display">График работы</h2>
         <BrigadeModeTabs value={mode} onChange={setMode} />
@@ -326,11 +332,19 @@ export function BrigadeBoard({
                         disabled={pending || isPastDay}
                         onClick={() =>
                           start(async () => {
-                            await toggleBrigadeAssignment({
-                              brigadeId: brigade.id,
-                              dayOfWeek: d.index,
-                              weekStartDate: weekStartDateIso
-                            });
+                            try {
+                              setBoardError("");
+                              await toggleBrigadeAssignment({
+                                brigadeId: brigade.id,
+                                dayOfWeek: d.index,
+                                weekStartDate: weekStartDateIso
+                              });
+                              router.refresh();
+                            } catch (e) {
+                              setBoardError(
+                                e instanceof Error ? e.message : "Не удалось записаться на смену"
+                              );
+                            }
                           })
                         }
                         className={`w-full rounded-xl border p-2 text-left transition-all duration-200 ease-out ${

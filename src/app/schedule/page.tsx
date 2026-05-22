@@ -18,32 +18,33 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
   const nextWeekStart = addDays(currentWeekStart, 7);
   const weekStartDate = weekMode === "next" ? nextWeekStart : currentWeekStart;
   const canManageSchedule = canOpenManagerPanel(user);
-  const loaded = await catchDb("schedule", async () => {
-    const [shifts, assignableEmployees] = await Promise.all([
-      prisma.shift.findMany({
-        where: { weekStartDate },
-        include: { user: { select: prismaUserShiftBoardSelect }, zone: true },
-        orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }]
-      }),
-      canManageSchedule
-        ? prisma.user.findMany({
-            where: { isActive: true },
-            orderBy: { name: "asc" },
-            select: {
-              id: true,
-              name: true,
-              color: true,
-              telegramPhotoUrl: true
-            }
-          })
-        : Promise.resolve([])
-    ]);
-    return { shifts, assignableEmployees };
-  });
-  if (!loaded.ok) return <ServiceUnavailable scope="schedule" />;
+  const shiftsLoaded = await catchDb("schedule/shifts", () =>
+    prisma.shift.findMany({
+      where: { weekStartDate },
+      include: { user: { select: prismaUserShiftBoardSelect }, zone: true },
+      orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }]
+    })
+  );
+  if (!shiftsLoaded.ok) return <ServiceUnavailable scope="schedule/shifts" />;
+
+  const employeesLoaded = canManageSchedule
+    ? await catchDb("schedule/employees", () =>
+        prisma.user.findMany({
+          where: { isActive: true },
+          orderBy: { name: "asc" },
+          select: {
+            id: true,
+            name: true,
+            color: true,
+            telegramPhotoUrl: true
+          }
+        })
+      )
+    : ({ ok: true as const, data: [] });
 
   try {
-    const { shifts, assignableEmployees } = loaded.data;
+    const shifts = shiftsLoaded.data;
+    const assignableEmployees = employeesLoaded.ok ? employeesLoaded.data : [];
     const allowedKeys = new Set(BRIGADES.map((b) => `${b.zoneName}|${b.startTime}|${b.endTime}`));
     const boardShifts = shifts
       .filter((s) => allowedKeys.has(`${s.zone.name}|${s.startTime}|${s.endTime}`))
