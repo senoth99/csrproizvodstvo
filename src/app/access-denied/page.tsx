@@ -24,6 +24,11 @@ export default function AccessDeniedPage() {
             </Link>
             .
           </p>
+          <p className="pt-2">
+            <Link href="/telegram/login" className="link-tech text-sm">
+              Войти через сайт
+            </Link>
+          </p>
         </div>
       </div>
     </div>

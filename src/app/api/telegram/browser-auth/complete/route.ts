@@ -2,10 +2,14 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashToken } from "@/lib/auth";
 import { createSessionResponseFromTgUser, type TgMiniAppUser } from "@/lib/telegramSignIn";
+import { isBrowserTelegramLoginConfigured } from "@/lib/telegramBrowserLogin";
 
 export async function POST(req: Request) {
-  if (process.env.NODE_ENV === "production") {
-    return NextResponse.json({ error: "Вход только через Telegram Mini App." }, { status: 403 });
+  if (!isBrowserTelegramLoginConfigured()) {
+    return NextResponse.json(
+      { error: "Вход из браузера не настроен. Задайте TELEGRAM_BOT_TOKEN и NEXT_PUBLIC_TELEGRAM_BOT_USERNAME." },
+      { status: 503 }
+    );
   }
 
   try {

@@ -3,19 +3,16 @@ import { NextResponse } from "next/server";
 import { hashToken } from "@/lib/auth";
 import { prisma, normalizeDatabaseUrlEnv } from "@/lib/prisma";
 import { generateLoginLinkToken } from "@/lib/telegramBotHelpers";
+import { isBrowserTelegramLoginConfigured } from "@/lib/telegramBrowserLogin";
 
 const TTL_MINUTES = 15;
 
 export async function POST() {
-  if (process.env.NODE_ENV === "production") {
-    return NextResponse.json({ error: "Вход только через Telegram Mini App." }, { status: 403 });
-  }
-
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const botUser = (process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "").replace(/^@/, "").trim();
   const devBypass = process.env.TELEGRAM_ALLOW_DEV_LOGIN === "true";
 
-  if ((!botToken || !botUser) && !devBypass) {
+  if (!isBrowserTelegramLoginConfigured() && !devBypass) {
     return NextResponse.json(
       { error: "Не заданы TELEGRAM_BOT_TOKEN или NEXT_PUBLIC_TELEGRAM_BOT_USERNAME" },
       { status: 503 }

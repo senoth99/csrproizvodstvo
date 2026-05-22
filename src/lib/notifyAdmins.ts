@@ -1,6 +1,5 @@
 import { readFile } from "fs/promises";
 import { AppNotificationType, UserRole } from "@/lib/enums";
-import { resolveAppPublicBaseUrl } from "@/lib/appUrl";
 import { notifyUserAppAndTelegram } from "@/lib/notifyDispatch";
 import { prisma } from "@/lib/prisma";
 import { telegramSendPhoto } from "@/lib/telegramBotHelpers";
@@ -139,12 +138,7 @@ export async function notifyAdminsShiftReportSubmitted(input: {
     input.text.length > 280 ? `${input.text.slice(0, 277).trim()}…` : input.text.trim();
   const title = "Новый отчёт по смене";
   const body = `${input.employeeName}\n${input.brief}\n\n${preview}`;
-  const reportUrl = `${resolveAppPublicBaseUrl()}/reports/${input.reportId}`;
-  const telegramCaption =
-    `📋 Отчёт по смене\n${input.employeeName}\n${input.brief}\n\n${preview}\n\nОткрыть: ${reportUrl}`.slice(
-      0,
-      1024
-    );
+  const telegramCaption = `📋 Отчёт по смене\n${input.employeeName}\n${input.brief}\n\n${preview}`.slice(0, 1024);
 
   const userIds = await getAdminRoleUserIds();
   if (!userIds.length) return;
