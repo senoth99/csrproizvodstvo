@@ -12,3 +12,4 @@ public/uploads/*
 !public/uploads/reports/.gitkeep
 data/uploads/
 prisma/uploads/
+tsconfig.tsbuildinfo
