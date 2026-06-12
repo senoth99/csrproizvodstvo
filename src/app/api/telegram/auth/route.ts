@@ -48,6 +48,18 @@ export async function POST(req: Request) {
 
     const parsed = parseInitData(initData);
     if (!parsed) return NextResponse.json({ error: "Invalid initData" }, { status: 400 });
+
+    const authDateRaw = parsed.params.get("auth_date");
+    if (!authDateRaw) return NextResponse.json({ error: "auth_date required" }, { status: 400 });
+    const authDate = Number(authDateRaw);
+    if (!Number.isFinite(authDate)) return NextResponse.json({ error: "Invalid auth_date" }, { status: 400 });
+    const ageSeconds = Math.floor(Date.now() / 1000) - authDate;
+    if (ageSeconds > 3600) {
+      return NextResponse.json({ error: "Telegram initData expired" }, { status: 401 });
+    }
+    if (ageSeconds < -300) {
+      return NextResponse.json({ error: "Invalid auth_date" }, { status: 401 });
+    }
     const userRaw = parsed.params.get("user");
     if (!userRaw) return NextResponse.json({ error: "Telegram user not found" }, { status: 400 });
 

@@ -25,36 +25,53 @@ export async function POST(req: Request) {
     }
 
     const tokenHash = hashToken(normalizedToken);
-    const row = await prisma.telegramLoginChallenge.findUnique({ where: { tokenHash } });
+    const now = new Date();
 
-    if (!row) {
+    const consumeResult = await prisma.$transaction(async (tx) => {
+      const row = await tx.telegramLoginChallenge.findUnique({ where: { tokenHash } });
+      if (!row) return { kind: "waiting" as const };
+      if (row.expiresAt.getTime() < now.getTime()) {
+        await tx.telegramLoginChallenge.delete({ where: { id: row.id } }).catch(() => {});
+        return { kind: "expired" as const };
+      }
+      if (row.status !== "ready" || !row.telegramId) return { kind: "waiting" as const };
+
+      const tgUser: TgMiniAppUser = {
+        id: Number(row.telegramId),
+        username: row.telegramUsername ?? undefined,
+        first_name: row.telegramFirstName ?? undefined,
+        last_name: row.telegramLastName ?? undefined,
+        photo_url: row.telegramPhotoUrl ?? undefined
+      };
+      if (!Number.isFinite(tgUser.id)) {
+        await tx.telegramLoginChallenge.delete({ where: { id: row.id } }).catch(() => {});
+        return { kind: "invalid_user" as const };
+      }
+
+      const consumed = await tx.telegramLoginChallenge.deleteMany({
+        where: {
+          id: row.id,
+          status: "ready",
+          telegramId: { not: null },
+          expiresAt: { gt: now }
+        }
+      });
+      if (consumed.count !== 1) return { kind: "waiting" as const };
+
+      return { kind: "ok" as const, tgUser };
+    });
+
+    if (consumeResult.kind === "waiting") {
       return NextResponse.json({ waiting: true }, { status: 202 });
     }
-
-    if (row.expiresAt.getTime() < Date.now()) {
-      await prisma.telegramLoginChallenge.delete({ where: { id: row.id } }).catch(() => {});
+    if (consumeResult.kind === "expired") {
       return NextResponse.json({ error: "Токен устарел. Запросите новый на странице входа." }, { status: 410 });
     }
-
-    if (row.status !== "ready" || !row.telegramId) {
-      return NextResponse.json({ waiting: true }, { status: 202 });
-    }
-
-    const tgUser: TgMiniAppUser = {
-      id: Number(row.telegramId),
-      username: row.telegramUsername ?? undefined,
-      first_name: row.telegramFirstName ?? undefined,
-      last_name: row.telegramLastName ?? undefined,
-      photo_url: row.telegramPhotoUrl ?? undefined
-    };
-    if (!Number.isFinite(tgUser.id)) {
-      await prisma.telegramLoginChallenge.delete({ where: { id: row.id } }).catch(() => {});
+    if (consumeResult.kind === "invalid_user") {
       return NextResponse.json({ error: "Некорректные данные пользователя в записи входа" }, { status: 400 });
     }
 
-    const sessionRes = await createSessionResponseFromTgUser(tgUser);
-    await prisma.telegramLoginChallenge.delete({ where: { id: row.id } }).catch(() => {});
-    return sessionRes;
+    return await createSessionResponseFromTgUser(consumeResult.tgUser);
   } catch (e) {
     console.error("[api/telegram/browser-auth/complete]", e);
     return NextResponse.json({ error: "База или сессия недоступны. Выполните prisma db push / migrate и перезапустите сервер." }, { status: 503 });

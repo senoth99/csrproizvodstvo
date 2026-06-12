@@ -6,23 +6,25 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { getReportById } from "@/app/actions";
-import { catchDb } from "@/lib/dbBoundary";
-import { getCurrentUser, requireAuth } from "@/lib/auth";
+import { catchAuth, catchDb } from "@/lib/dbBoundary";
+import { requireAuth } from "@/lib/auth";
 import { ShiftReportStatus } from "@/lib/enums";
 import { formatDateRu, formatMoneyRu, isoFromWeekDay, weekDays } from "@/lib/utils";
+import { formatWorkedMinutes } from "@/lib/workedHours";
 import { normalizeReportPhotoPath } from "@/lib/workplaceReportPhoto";
 
 export default async function ReportDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireAuth();
   const { id } = await params;
+  const authResult = await catchAuth(() => requireAuth());
+  if (!authResult.ok) return <ServiceUnavailable scope={`reports/${id}`} />;
+  const viewer = authResult.data;
   const reportResult = await catchDb(`reports/${id}`, () => getReportById(id));
   if (!reportResult.ok) return <ServiceUnavailable scope={`reports/${id}`} />;
   const report = reportResult.data;
   if (!report) notFound();
 
   try {
-    const viewer = await getCurrentUser();
-    const isAdmin = Boolean(viewer?.isManager) || viewer?.role === "ADMIN" || viewer?.role === "SUPER_ADMIN";
+    const isAdmin = Boolean(viewer.isManager) || viewer.role === "ADMIN" || viewer.role === "SUPER_ADMIN";
 
     const dayLabel = weekDays.find((w) => w.index === report.shift.dayOfWeek)?.name ?? "";
     const shiftDate = isoFromWeekDay(report.shift.weekStartDate, report.shift.dayOfWeek);
@@ -56,6 +58,20 @@ export default async function ReportDetailPage({ params }: { params: Promise<{ i
               </div>
             </div>
           </div>
+
+          {report.workStartTime && report.workEndTime ? (
+            <div className="rounded-lg border border-border bg-foreground/[0.03] px-4 py-3">
+              <p className="text-xs font-bold uppercase tracking-display text-muted">Фактическое время работы</p>
+              <p className="mt-1 text-lg font-semibold tabular-nums">
+                {report.workStartTime} – {report.workEndTime}
+              </p>
+              {report.workedMinutes ? (
+                <p className="mt-1 text-sm text-muted">
+                  Отработано: <span className="font-semibold text-foreground">{formatWorkedMinutes(report.workedMinutes)}</span>
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
           {!isAdmin && report.status === ShiftReportStatus.PENDING_REVIEW ? (
             <p className="rounded-sm border border-highlight/45 bg-highlight/12 px-3 py-2.5 text-sm leading-snug text-foreground/90">
@@ -111,6 +127,8 @@ export default async function ReportDetailPage({ params }: { params: Promise<{ i
           <ReportTextEditor
             reportId={report.id}
             initialText={report.text}
+            initialWorkStartTime={report.workStartTime ?? ""}
+            initialWorkEndTime={report.workEndTime ?? ""}
             canEdit={!isAdmin && report.status === ShiftReportStatus.PENDING_REVIEW}
           />
 

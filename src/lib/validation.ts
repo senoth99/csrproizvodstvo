@@ -39,13 +39,48 @@ export const updateShiftSchema = shiftSchema.partial().extend({
   status: z.enum([ShiftStatus.PLANNED, ShiftStatus.IN_PROGRESS, ShiftStatus.COMPLETED, ShiftStatus.CANCELLED]).optional()
 });
 
-export const reportSchema = z.object({
-  shiftId: z.string().cuid(),
-  text: z.string().min(5),
-  workplacePhotoPath: z.string().min(1)
-});
+const workTimeSchema = z.string().regex(/^\d{2}:\d{2}$/, "Формат времени: ЧЧ:ММ");
 
-export const updateReportSchema = z.object({
-  reportId: z.string().cuid(),
-  text: z.string().min(5)
-});
+export const reportSchema = z
+  .object({
+    shiftId: z.string().cuid(),
+    text: z.string().min(5),
+    workplacePhotoPath: z.string().min(1),
+    workStartTime: workTimeSchema,
+    workEndTime: workTimeSchema
+  })
+  .superRefine((data, ctx) => {
+    const [sh, sm] = data.workStartTime.split(":").map(Number);
+    const [eh, em] = data.workEndTime.split(":").map(Number);
+    const startM = sh * 60 + sm;
+    let endM = eh * 60 + em;
+    if (endM <= startM) endM += 24 * 60;
+    const diff = endM - startM;
+    if (diff < 1) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Время окончания должно быть позже начала.", path: ["workEndTime"] });
+    }
+    if (diff > 24 * 60) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Смена не может длиться больше 24 часов.", path: ["workEndTime"] });
+    }
+  });
+
+export const updateReportSchema = z
+  .object({
+    reportId: z.string().cuid(),
+    text: z.string().min(5),
+    workStartTime: workTimeSchema.optional(),
+    workEndTime: workTimeSchema.optional()
+  })
+  .superRefine((data, ctx) => {
+    if (data.workStartTime && data.workEndTime) {
+      const [sh, sm] = data.workStartTime.split(":").map(Number);
+      const [eh, em] = data.workEndTime.split(":").map(Number);
+      const startM = sh * 60 + sm;
+      let endM = eh * 60 + em;
+      if (endM <= startM) endM += 24 * 60;
+      const diff = endM - startM;
+      if (diff < 1 || diff > 24 * 60) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Проверьте время начала и окончания.", path: ["workEndTime"] });
+      }
+    }
+  });

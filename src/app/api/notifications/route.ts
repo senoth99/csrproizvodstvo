@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { AuthDbError, getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { MAX_APP_NOTIFICATIONS_PER_USER, trimAppNotificationsForUser } from "@/lib/notifyDispatch";
 
@@ -8,6 +8,10 @@ export async function GET() {
   try {
     user = await getCurrentUser();
   } catch (e) {
+    if (e instanceof AuthDbError) {
+      console.error("[api/notifications GET] auth DB", e);
+      return NextResponse.json({ items: [], error: "service_unavailable" }, { status: 503 });
+    }
     console.error("[api/notifications GET] session", e);
     return NextResponse.json({ items: [], error: "service_unavailable" }, { status: 503 });
   }
@@ -33,7 +37,7 @@ export async function GET() {
     return NextResponse.json({ items });
   } catch (e) {
     console.error("[api/notifications GET] Prisma error — проверьте миграции и npx prisma generate:", e);
-    return NextResponse.json({ items: [] });
+    return NextResponse.json({ items: [], error: "notifications_unavailable" }, { status: 503 });
   }
 }
 
@@ -42,6 +46,10 @@ export async function PATCH(req: Request) {
   try {
     user = await getCurrentUser();
   } catch (e) {
+    if (e instanceof AuthDbError) {
+      console.error("[api/notifications PATCH] auth DB", e);
+      return NextResponse.json({ ok: false, error: "service_unavailable" }, { status: 503 });
+    }
     console.error("[api/notifications PATCH] session", e);
     return NextResponse.json({ ok: false, error: "service_unavailable" }, { status: 503 });
   }

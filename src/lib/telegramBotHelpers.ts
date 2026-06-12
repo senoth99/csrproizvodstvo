@@ -14,8 +14,8 @@ export function extractTelegramLoginToken(text: string | undefined): string | nu
   if (fromCmd && /^[a-f\d]{32}$/i.test(fromCmd)) return fromCmd.toLowerCase();
   if (/^[a-f\d]{32}$/i.test(trimmed)) return trimmed.toLowerCase();
   // Backward compatibility for old tokens.
-  if (fromCmd && /^login_[a-f\d]{32}$/i.test(fromCmd)) return fromCmd.toLowerCase();
-  if (/^login_[a-f\d]{32}$/i.test(trimmed)) return trimmed.toLowerCase();
+  if (fromCmd && /^login_[a-f\d]{32}$/i.test(fromCmd)) return fromCmd.slice(6).toLowerCase();
+  if (/^login_[a-f\d]{32}$/i.test(trimmed)) return trimmed.slice(6).toLowerCase();
   return null;
 }
 

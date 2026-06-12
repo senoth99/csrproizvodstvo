@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { AuthDbError, getCurrentUser } from "@/lib/auth";
 import { notifyAdminsShiftArrival } from "@/lib/notifyAdmins";
 import { prisma } from "@/lib/prisma";
 import { getOrCreateWorkplaceQrToken } from "@/lib/workplaceQr";
@@ -9,6 +9,10 @@ export async function POST(req: Request) {
   try {
     user = await getCurrentUser();
   } catch (e) {
+    if (e instanceof AuthDbError) {
+      console.error("[api/workplace/check-in POST] auth DB", e);
+      return NextResponse.json({ error: "service_unavailable" }, { status: 503 });
+    }
     console.error("[api/workplace/check-in POST] session", e);
     return NextResponse.json({ error: "service_unavailable" }, { status: 503 });
   }
@@ -35,16 +39,11 @@ export async function POST(req: Request) {
       select: { id: true }
     });
 
-    if (existing) {
-      await prisma.workplaceArrival.update({
-        where: { userId: user.id },
-        data: { arrivedAt }
-      });
-    } else {
-      await prisma.workplaceArrival.create({
-        data: { userId: user.id, arrivedAt }
-      });
-    }
+    await prisma.workplaceArrival.upsert({
+      where: { userId: user.id },
+      create: { userId: user.id, arrivedAt },
+      update: { arrivedAt }
+    });
 
     await notifyAdminsShiftArrival({ employeeName: user.name, arrivedAt });
 

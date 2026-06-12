@@ -19,7 +19,11 @@ type TelegramCallbackQuery = {
   data?: string;
 };
 
+let devWebhookSecretWarned = false;
+
 async function handleLoginMessage(msg: TelegramMessage) {
+  if (!msg.from) return false;
+
   const token = extractTelegramLoginToken(msg.text);
   if (!token) return false;
 
@@ -40,10 +44,10 @@ async function handleLoginMessage(msg: TelegramMessage) {
   }
 
   const tgUser: TgMiniAppUser = {
-    id: msg.from!.id,
-    username: msg.from!.username,
-    first_name: msg.from!.first_name,
-    last_name: msg.from!.last_name
+    id: msg.from.id,
+    username: msg.from.username,
+    first_name: msg.from.first_name,
+    last_name: msg.from.last_name
   };
 
   const role = await getTelegramAllowanceRole(tgUser);
@@ -52,17 +56,22 @@ async function handleLoginMessage(msg: TelegramMessage) {
     return true;
   }
 
-  await prisma.telegramLoginChallenge.update({
-    where: { id: challenge.id },
+  const updated = await prisma.telegramLoginChallenge.updateMany({
+    where: { id: challenge.id, status: "pending" },
     data: {
       status: "ready",
-      telegramId: String(msg.from!.id),
-      telegramUsername: msg.from!.username ?? null,
-      telegramFirstName: msg.from!.first_name ?? null,
-      telegramLastName: msg.from!.last_name ?? null,
+      telegramId: String(msg.from.id),
+      telegramUsername: msg.from.username ?? null,
+      telegramFirstName: msg.from.first_name ?? null,
+      telegramLastName: msg.from.last_name ?? null,
       telegramPhotoUrl: null
     }
   });
+
+  if (updated.count !== 1) {
+    await telegramSendMessage(msg.chat.id, "Вход уже подтверждён — вернитесь в браузер.");
+    return true;
+  }
 
   await telegramSendMessage(msg.chat.id, "Готово. Вернитесь в браузер — вход откроется автоматически.");
   return true;
@@ -78,13 +87,17 @@ async function handleCallbackQuery(cb: TelegramCallbackQuery) {
 /** Входящие обновления от Bot API: вход по токену и ответы на callback-кнопки. */
 
 export async function POST(req: Request) {
-  const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
-  if (secret) {
-    if (req.headers.get("X-Telegram-Bot-Api-Secret-Token") !== secret) {
-      return new NextResponse("Forbidden", { status: 403 });
+  const secret = process.env.TELEGRAM_WEBHOOK_SECRET?.trim();
+  if (!secret) {
+    if (process.env.NODE_ENV === "production") {
+      return NextResponse.json({ error: "Задайте TELEGRAM_WEBHOOK_SECRET для webhook" }, { status: 503 });
     }
-  } else if (process.env.NODE_ENV === "production") {
-    return NextResponse.json({ error: "Задайте TELEGRAM_WEBHOOK_SECRET для webhook" }, { status: 503 });
+    if (!devWebhookSecretWarned) {
+      console.warn("[api/telegram/webhook] TELEGRAM_WEBHOOK_SECRET не задан — запросы разрешены в dev");
+      devWebhookSecretWarned = true;
+    }
+  } else if (req.headers.get("X-Telegram-Bot-Api-Secret-Token") !== secret) {
+    return new NextResponse("Forbidden", { status: 403 });
   }
 
   let update: { message?: TelegramMessage; callback_query?: TelegramCallbackQuery };

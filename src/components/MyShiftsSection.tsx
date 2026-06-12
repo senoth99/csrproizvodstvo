@@ -35,11 +35,9 @@ export function MyShiftsSection({ weekShifts }: { weekShifts: ShiftItem[] }) {
     const dayBadge = isToday ? "Сегодня" : isTomorrow ? "Завтра" : null;
 
     const reportPending =
-      s.hasReport && s.reportStatus === ShiftReportStatus.PENDING_REVIEW;
-    const reportAccepted =
       s.hasReport &&
-      (s.reportStatus === ShiftReportStatus.ACCEPTED ||
-        (s.reportStatus == null)); /* до миграции статуса */
+      (s.reportStatus === ShiftReportStatus.PENDING_REVIEW || s.reportStatus == null);
+    const reportAccepted = s.hasReport && s.reportStatus === ShiftReportStatus.ACCEPTED;
     const shiftHeadline = `${s.zoneName} · ${weekDays[s.dayOfWeek - 1]?.name ?? ""}, ${formatDateRu(
       shiftDay,
       "dd.MM"
@@ -89,7 +87,12 @@ export function MyShiftsSection({ weekShifts }: { weekShifts: ShiftItem[] }) {
               Смена принята
             </p>
           ) : (
-            <CompleteShiftReportDialog shiftId={s.id} headline={shiftHeadline} />
+            <CompleteShiftReportDialog
+              shiftId={s.id}
+              headline={shiftHeadline}
+              defaultStartTime={s.startTime}
+              defaultEndTime={s.endTime}
+            />
           )
         ) : null}
       </div>

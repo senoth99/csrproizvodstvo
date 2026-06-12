@@ -91,6 +91,8 @@ export function TelegramBrowserLogin({
   const tokenRef = useRef<string | null>(null);
   const pollingRef = useRef(false);
   const startingRef = useRef(false);
+  const completingRef = useRef(false);
+  const resumeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const stopPolling = useCallback(() => {
     pollingRef.current = false;
@@ -98,38 +100,44 @@ export function TelegramBrowserLogin({
 
   const completeLogin = useCallback(
     async (token: string) => {
-      const res = await fetch("/api/telegram/browser-auth/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ token })
-      });
-      const data = (await res.json().catch(() => ({}))) as CompletePayload;
+      if (completingRef.current) return false;
+      completingRef.current = true;
+      try {
+        const res = await fetch("/api/telegram/browser-auth/complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ token })
+        });
+        const data = (await res.json().catch(() => ({}))) as CompletePayload;
 
-      if (isAccessDeniedResponse(res.status, data)) {
+        if (isAccessDeniedResponse(res.status, data)) {
+          stopPolling();
+          clearStored();
+          window.location.replace("/access-denied");
+          return true;
+        }
+        if (res.status === 202 || data.waiting) return false;
+        if (!res.ok) {
+          stopPolling();
+          setPhase("error");
+          if (res.status === 410) {
+            clearStored();
+            setError("Код входа устарел. Нажмите «Начать заново».");
+          } else {
+            setError(data.error ?? "Не удалось завершить вход");
+          }
+          return true;
+        }
+        if (!data.ok) return false;
+
         stopPolling();
         clearStored();
-        window.location.replace("/access-denied");
+        window.location.replace(data.onboardingRequired ? "/welcome" : "/schedule");
         return true;
+      } finally {
+        completingRef.current = false;
       }
-      if (res.status === 202 || data.waiting) return false;
-      if (!res.ok) {
-        stopPolling();
-        setPhase("error");
-        if (res.status === 410) {
-          clearStored();
-          setError("Код входа устарел. Нажмите «Начать заново».");
-        } else {
-          setError(data.error ?? "Не удалось завершить вход");
-        }
-        return true;
-      }
-      if (!data.ok) return false;
-
-      stopPolling();
-      clearStored();
-      window.location.replace(data.onboardingRequired ? "/welcome" : "/schedule");
-      return true;
     },
     [stopPolling]
   );
@@ -159,15 +167,19 @@ export function TelegramBrowserLogin({
   );
 
   const resumePollingFromStorage = useCallback(() => {
-    const stored = readStored();
-    if (!stored) return;
-    tokenRef.current = stored.token;
-    setOpenUrl(stored.openUrl);
-    if (!pollingRef.current) {
-      startPolling(stored.token);
-    } else {
-      void pollOnce();
-    }
+    if (resumeDebounceRef.current) clearTimeout(resumeDebounceRef.current);
+    resumeDebounceRef.current = setTimeout(() => {
+      resumeDebounceRef.current = null;
+      const stored = readStored();
+      if (!stored) return;
+      tokenRef.current = stored.token;
+      setOpenUrl(stored.openUrl);
+      if (!pollingRef.current) {
+        startPolling(stored.token);
+      } else {
+        void pollOnce();
+      }
+    }, 200);
   }, [pollOnce, startPolling]);
 
   const beginBrowserLogin = useCallback(
@@ -327,10 +339,7 @@ export function TelegramBrowserLogin({
         <button
           type="button"
           className="btn-secondary w-full"
-          onClick={() => {
-            resumePollingFromStorage();
-            void pollOnce();
-          }}
+          onClick={() => resumePollingFromStorage()}
         >
           Я нажал Start — проверить вход
         </button>

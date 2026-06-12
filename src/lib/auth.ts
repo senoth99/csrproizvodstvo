@@ -10,7 +10,17 @@ import { sessionSecretBytes } from "./sessionSecret";
 import { sessionCookieSecure } from "./sessionCookie";
 
 const COOKIE_NAME = "ps_session";
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
+export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
+
+export class AuthDbError extends Error {
+  constructor(message?: string, options?: { cause?: unknown }) {
+    super(message ?? "Auth database error");
+    this.name = "AuthDbError";
+    if (options?.cause !== undefined) {
+      this.cause = options.cause;
+    }
+  }
+}
 
 /** Данные, прошитые в JWT — layout читает оболочку без запроса в БД. */
 export type SessionPayload = {
@@ -117,6 +127,15 @@ export async function getShellSessionUser(): Promise<ShellSessionUser | null> {
     if (!userId || !role) return null;
 
     if (isRichSessionPayload(p)) {
+      try {
+        const u = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { isActive: true }
+        });
+        if (!u?.isActive) return null;
+      } catch {
+        return null;
+      }
       const tu = p.telegramUsername.trim().toLowerCase();
       return {
         id: userId,
@@ -209,10 +228,12 @@ export async function getCurrentUser() {
       const user = await prisma.user.findUnique({ where: { id: userId } });
       if (!user || !user.isActive) return null;
       return user;
-    } catch {
-      return null;
+    } catch (e) {
+      console.error("[getCurrentUser] DB error:", e);
+      throw new AuthDbError(undefined, { cause: e });
     }
   } catch (e) {
+    if (e instanceof AuthDbError) throw e;
     console.error("[getCurrentUser]", e instanceof Error ? e.message : e);
     return null;
   }
@@ -230,6 +251,7 @@ export async function requireRole(roles: UserRoleValue[]) {
     return user;
   } catch (e) {
     if (isNextRedirectError(e)) throw e;
+    if (e instanceof AuthDbError) throw e;
     console.error("[requireRole]", e instanceof Error ? e.message : e);
     redirect("/telegram/login");
   }
@@ -243,6 +265,7 @@ export async function requireAuth() {
     return user;
   } catch (e) {
     if (isNextRedirectError(e) || isNextHttpAccessFallbackError(e)) throw e;
+    if (e instanceof AuthDbError) throw e;
     console.error("[requireAuth]", e instanceof Error ? e.message : e);
     redirect("/telegram/login");
   }
@@ -270,6 +293,13 @@ export async function requireRoleApi(
     }
     return { ok: true, user };
   } catch (e) {
+    if (e instanceof AuthDbError) {
+      console.error("[requireRoleApi] DB error:", e);
+      return {
+        ok: false,
+        response: NextResponse.json({ error: "Service unavailable", code: "AUTH_LAYER" }, { status: 503 })
+      };
+    }
     console.error("[requireRoleApi]", e instanceof Error ? e.message : e);
     return {
       ok: false,

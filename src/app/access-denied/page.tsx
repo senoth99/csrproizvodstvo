@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { getContactTelegramUsername } from "@/lib/contactTelegram";
+import { getContactTelegramUrl, getContactTelegramUsername } from "@/lib/contactTelegram";
 import { BRAND_LOGO_SRC } from "@/lib/brandLogo";
 
 export default function AccessDeniedPage() {
   const handle = getContactTelegramUsername();
-  const tgUrl = `https://t.me/${encodeURIComponent(handle)}`;
+  const tgUrl = getContactTelegramUrl();
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-background px-6 py-10 pb-[max(2.5rem,var(--safe-bottom))] pt-[max(2.5rem,var(--safe-top))]">
@@ -18,11 +18,17 @@ export default function AccessDeniedPage() {
         <div className="space-y-2">
           <h1 className="ui-page-title text-[1.35rem] sm:text-[1.5rem]">Доступ запрещён</h1>
           <p className="text-sm leading-relaxed text-muted">
-            Обратитесь к{" "}
-            <Link href={tgUrl} className="link-tech text-sm" target="_blank" rel="noopener noreferrer">
-              @{handle}
-            </Link>
-            .
+            {tgUrl ? (
+              <>
+                Обратитесь к{" "}
+                <Link href={tgUrl} className="link-tech text-sm" target="_blank" rel="noopener noreferrer">
+                  @{handle}
+                </Link>
+                .
+              </>
+            ) : (
+              <>Обратитесь к администратору.</>
+            )}
           </p>
           <p className="pt-2">
             <Link href="/telegram/login" className="link-tech text-sm">

@@ -16,9 +16,16 @@ export async function getOrCreateWorkplaceQrToken(): Promise<string> {
   await prisma.systemSettings.upsert({
     where: { key: WORKPLACE_QR_TOKEN_KEY },
     create: { key: WORKPLACE_QR_TOKEN_KEY, value: token },
-    update: { value: token }
+    update: {}
   });
-  return token;
+
+  const row = await prisma.systemSettings.findUnique({
+    where: { key: WORKPLACE_QR_TOKEN_KEY },
+    select: { value: true }
+  });
+  const value = row?.value?.trim();
+  if (!value) throw new Error("workplace QR token missing after upsert");
+  return value;
 }
 
 export function getWorkplaceCheckInUrl(token: string): string {

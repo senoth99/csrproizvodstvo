@@ -41,11 +41,11 @@ export function SwipePageSwitch({ children }: { children: React.ReactNode }) {
 
     if (Math.abs(deltaX) < SWIPE_THRESHOLD || Math.abs(deltaY) > VERTICAL_TOLERANCE) return;
     if (pathname.startsWith("/schedule")) {
-      router.push("/me");
+      if (deltaX < 0) router.push("/me");
       return;
     }
     if (pathname.startsWith("/me")) {
-      router.push("/schedule");
+      if (deltaX > 0) router.push("/schedule");
     }
   };
 

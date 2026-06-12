@@ -4,12 +4,15 @@ import { resolveAppPublicBaseUrl } from "@/lib/appUrl";
 import { noSessionRedirectPath } from "@/lib/noSessionRedirect";
 import { sessionSecretBytes } from "@/lib/sessionSecret";
 
+const STATIC_FILE_EXT =
+  /\.(ico|png|jpg|jpeg|gif|webp|svg|css|js|mjs|woff2?|ttf|map|txt|xml|json|webmanifest)$/i;
+
+/** /api/* не проходит matcher — сюда только страницы без сессии. */
 const PUBLIC_PATHS = [
   "/login/token",
   "/need-link",
   "/access-denied",
-  "/telegram/login",
-  "/api/telegram/webhook"
+  "/telegram/login"
 ];
 
 /** Любой сбой внутри middleware в Next превращался бы в сырое Internal Server Error. */
@@ -37,7 +40,7 @@ async function middlewareInner(req: NextRequest): Promise<NextResponse> {
   */
   if (
     pathname.startsWith("/_next") ||
-    pathname.includes(".") ||
+    STATIC_FILE_EXT.test(pathname) ||
     pathname === "/robots.txt" ||
     pathname === "/manifest.json" ||
     pathname === "/manifest.webmanifest" ||

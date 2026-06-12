@@ -4,9 +4,11 @@
  *
  * Не перехватываем redirect()/`NEXT_REDIRECT` — иначе Next ломает навигацию и бывают некорректные ответы.
  */
+import { AuthDbError } from "@/lib/auth";
 import { withSqliteRetry } from "@/lib/prismaRetry";
 
 export type DbResult<T> = { ok: true; data: T } | { ok: false; digest?: string };
+export type AuthResult<T> = { ok: true; data: T } | { ok: false };
 
 /** См. `next/dist/client/components/redirect-error`: digest начинается с `NEXT_REDIRECT`. */
 export function isNextRedirectError(error: unknown): boolean {
@@ -22,6 +24,20 @@ export function isNextHttpAccessFallbackError(error: unknown): boolean {
   if (typeof digest !== "string") return false;
   const [prefix, code] = digest.split(";");
   return prefix === "NEXT_HTTP_ERROR_FALLBACK" && ["404", "403", "401"].includes(code ?? "");
+}
+
+export async function catchAuth<T>(fn: () => Promise<T>): Promise<AuthResult<T>> {
+  try {
+    const data = await fn();
+    return { ok: true, data };
+  } catch (e) {
+    if (isNextRedirectError(e) || isNextHttpAccessFallbackError(e)) throw e;
+    if (e instanceof AuthDbError) {
+      console.error("[AuthDB]", e);
+      return { ok: false };
+    }
+    throw e;
+  }
 }
 
 export async function catchDb<T>(scope: string, fn: () => Promise<T>): Promise<DbResult<T>> {

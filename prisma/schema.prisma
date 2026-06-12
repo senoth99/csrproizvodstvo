@@ -190,6 +190,11 @@ model ShiftReport {
   /// Начисление «за выход» (копейки); вместе с `accrualWorkCents` даёт сумму `accrualAmountCents`.
   accrualAppearanceCents Int?
   accrualWorkCents       Int?
+  /// Фактическое время работы (HH:mm), вводит сотрудник в отчёте.
+  workStartTime      String?
+  workEndTime        String?
+  /// Отработано минут (считается из workStartTime/workEndTime).
+  workedMinutes      Int?
   acceptedAt         DateTime?
   acceptedByUserId   String?
   createdAt          DateTime  @default(now())

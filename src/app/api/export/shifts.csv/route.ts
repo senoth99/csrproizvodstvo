@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireRoleApi } from "@/lib/auth";
+import { csvEscape } from "@/lib/csv";
 import { UserRole } from "@/lib/enums";
 import { prismaUserListNameSelect } from "@/lib/prismaSafeUserInclude";
 import { prisma } from "@/lib/prisma";
+import { APP_TIME_ZONE } from "@/lib/utils";
+import { formatInTimeZone } from "date-fns-tz";
 
 export async function GET() {
   try {
@@ -17,7 +20,15 @@ export async function GET() {
     }
     const header = "Сотрудник,Зона,Дата недели,День,Начало,Конец,Статус";
     const rows = shifts.map((s) =>
-      [s.user.name, s.zone.name, s.weekStartDate.toISOString().slice(0, 10), s.dayOfWeek, s.startTime, s.endTime, s.status].join(",")
+      [
+        csvEscape(s.user.name),
+        csvEscape(s.zone.name),
+        csvEscape(formatInTimeZone(s.weekStartDate, APP_TIME_ZONE, "yyyy-MM-dd")),
+        csvEscape(s.dayOfWeek),
+        csvEscape(s.startTime),
+        csvEscape(s.endTime),
+        csvEscape(s.status)
+      ].join(",")
     );
     return new NextResponse([header, ...rows].join("\n"), {
       headers: {

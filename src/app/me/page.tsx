@@ -4,28 +4,32 @@ import { ChevronRight, QrCode } from "lucide-react";
 import { MeProfileCard } from "@/components/MeProfileCard";
 import { MyShiftsSection } from "@/components/MyShiftsSection";
 import { ServiceUnavailable } from "@/components/ServiceUnavailable";
+import { getMonthlyWorkedMinutesForUser } from "@/app/actions";
 import { requireAuth } from "@/lib/auth";
 import { catchDb } from "@/lib/dbBoundary";
 import { prisma } from "@/lib/prisma";
 import { formatMoneyRu, getWeekStart } from "@/lib/utils";
+import { formatWorkedMinutes, getCurrentAppMonth } from "@/lib/workedHours";
 
 export default async function MePage() {
   const user = await requireAuth();
   const weekStart = getWeekStart();
   const weekEnd = addDays(weekStart, 14);
+  const monthLabel = getCurrentAppMonth().label;
   const loaded = await catchDb("me", async () => {
-    const [shifts, balanceRow] = await Promise.all([
+    const [shifts, balanceRow, monthlyMinutes] = await Promise.all([
       prisma.shift.findMany({
         where: { userId: user.id, weekStartDate: { gte: weekStart, lt: weekEnd } },
         include: { zone: true, report: true },
         orderBy: [{ weekStartDate: "asc" }, { dayOfWeek: "asc" }, { startTime: "asc" }]
       }),
-      prisma.user.findUnique({ where: { id: user.id }, select: { payoutDebtCents: true } })
+      prisma.user.findUnique({ where: { id: user.id }, select: { payoutDebtCents: true } }),
+      getMonthlyWorkedMinutesForUser(user.id)
     ]);
-    return { shifts, payoutDebtCents: balanceRow?.payoutDebtCents ?? 0 };
+    return { shifts, payoutDebtCents: balanceRow?.payoutDebtCents ?? 0, monthlyMinutes };
   });
   if (!loaded.ok) return <ServiceUnavailable scope="me" />;
-  const { shifts, payoutDebtCents } = loaded.data;
+  const { shifts, payoutDebtCents, monthlyMinutes } = loaded.data;
   try {
     return (
       <div className="space-y-4">
@@ -50,6 +54,11 @@ export default async function MePage() {
           </div>
           <ChevronRight className="h-6 w-6 shrink-0 text-muted" aria-hidden />
         </Link>
+        <div className="card">
+          <p className="ui-section-kicker">Часы за месяц</p>
+          <p className="mt-1 text-xs capitalize text-muted">{monthLabel}</p>
+          <p className="mt-2 text-2xl font-bold tabular-nums">{formatWorkedMinutes(monthlyMinutes)}</p>
+        </div>
         <Link
           href="/me/balance"
           className="card flex min-h-[52px] w-full max-w-full touch-manipulation items-center justify-between gap-3 transition-colors hover:bg-foreground/[0.04] active:opacity-90"

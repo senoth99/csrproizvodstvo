@@ -1,7 +1,8 @@
 "use server";
 
 import { Prisma } from "@prisma/client";
-import { addHours, isBefore, parseISO } from "date-fns";
+import { addDays, addHours, isBefore, parseISO } from "date-fns";
+import { fromZonedTime, toZonedTime } from "date-fns-tz";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import {
@@ -34,11 +35,12 @@ import {
 } from "@/lib/notifyAdmins";
 import { describeShiftBrief } from "@/lib/shiftBrief";
 import { prismaUserListNameSelect, prismaUserShiftBoardSelect } from "@/lib/prismaSafeUserInclude";
-import { isoFromWeekDay } from "@/lib/utils";
+import { APP_TIME_ZONE, isoFromWeekDay } from "@/lib/utils";
 import {
   getReportPhotoApiPath,
   resolveReportPhotoDiskPath
 } from "@/lib/workplaceReportPhoto";
+import { computeWorkedMinutes, getCurrentAppMonth, groupMonthlyWorkedByUser } from "@/lib/workedHours";
 import { z } from "zod";
 
 function normalizedTelegramSuperAdminUsername(): string {
@@ -105,18 +107,19 @@ function userIsReportAdmin(actor: { role: string; isManager?: boolean | null }) 
 
 function toDateTime(weekStartDate: Date, dayOfWeek: number, time: string) {
   const date = isoFromWeekDay(weekStartDate, dayOfWeek);
+  const zoned = toZonedTime(date, APP_TIME_ZONE);
   const [hours, minutes] = time.split(":").map(Number);
-  date.setHours(hours, minutes, 0, 0);
-  return date;
+  zoned.setHours(hours, minutes, 0, 0);
+  return fromZonedTime(zoned, APP_TIME_ZONE);
 }
 
 function endAt(start: Date, startTime: string, endTime: string) {
   const [sh, sm] = startTime.split(":").map(Number);
   const [eh, em] = endTime.split(":").map(Number);
-  const end = new Date(start);
-  end.setHours(eh, em, 0, 0);
-  if (eh < sh || (eh === sh && em <= sm)) end.setDate(end.getDate() + 1);
-  return end;
+  const zoned = toZonedTime(start, APP_TIME_ZONE);
+  zoned.setHours(eh, em, 0, 0);
+  if (eh < sh || (eh === sh && em <= sm)) zoned.setDate(zoned.getDate() + 1);
+  return fromZonedTime(zoned, APP_TIME_ZONE);
 }
 
 async function assertCanEditBy24h(userRole: string, shiftStart: Date) {
@@ -145,7 +148,7 @@ async function assertSingleShiftPerDay(
   userId: string,
   weekStartDate: Date,
   dayOfWeek: number,
-  exceptShiftId?: string
+  exceptShiftIds: string[] = []
 ) {
   const existing = await prisma.shift.findFirst({
     where: {
@@ -153,7 +156,7 @@ async function assertSingleShiftPerDay(
       weekStartDate,
       dayOfWeek,
       status: { not: ShiftStatus.CANCELLED },
-      ...(exceptShiftId ? { NOT: { id: exceptShiftId } } : {})
+      ...(exceptShiftIds.length ? { NOT: { id: { in: exceptShiftIds } } } : {})
     },
     select: { id: true }
   });
@@ -162,11 +165,27 @@ async function assertSingleShiftPerDay(
   }
 }
 
-async function assertZoneLimit(zoneId: string, dayOfWeek: number, startTime: string, endTime: string, weekStartDate: Date, allowOverride: boolean) {
+async function assertZoneLimit(
+  zoneId: string,
+  dayOfWeek: number,
+  startTime: string,
+  endTime: string,
+  weekStartDate: Date,
+  allowOverride: boolean,
+  excludeShiftId?: string
+) {
   const limits = await prisma.zoneLimit.findMany({ where: { zoneId, OR: [{ dayOfWeek }, { dayOfWeek: null }] } });
   const max = limits.length ? Math.min(...limits.map((l) => l.maxEmployees)) : Number.MAX_SAFE_INTEGER;
   const count = await prisma.shift.count({
-    where: { zoneId, dayOfWeek, weekStartDate, startTime, endTime, status: { not: ShiftStatus.CANCELLED } }
+    where: {
+      zoneId,
+      dayOfWeek,
+      weekStartDate,
+      startTime,
+      endTime,
+      status: { not: ShiftStatus.CANCELLED },
+      ...(excludeShiftId ? { NOT: { id: excludeShiftId } } : {})
+    }
   });
   if (count >= max && !allowOverride) throw new Error("Лимит сотрудников по зоне и времени превышен.");
 }
@@ -233,6 +252,7 @@ export async function generateAccessToken(userId: string) {
   const tokenHash = hashToken(raw);
   await prisma.accessToken.create({ data: { userId, tokenHash } });
   await writeAuditLog({ actorUserId: actor.id, action: "ISSUE_ACCESS_TOKEN", entityType: "AccessToken", entityId: userId });
+  revalidatePath("/admin/users");
   return `${resolveAppPublicBaseUrl()}/login/token/${raw}`;
 }
 
@@ -240,6 +260,7 @@ export async function revokeAccessToken(id: string) {
   const actor = await requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]);
   await prisma.accessToken.update({ where: { id }, data: { isActive: false, revokedAt: new Date() } });
   await writeAuditLog({ actorUserId: actor.id, action: "REVOKE_ACCESS_TOKEN", entityType: "AccessToken", entityId: id });
+  revalidatePath("/admin/users");
 }
 
 export async function createZone(input: unknown) {
@@ -324,7 +345,11 @@ export async function toggleBrigadeAssignment(input: { brigadeId: string; dayOfW
     include: { zone: true }
   });
 
+  const start = toDateTime(weekStartDate, dayOfWeek, brigade.startTime);
+  const end = endAt(start, brigade.startTime, brigade.endTime);
+
   if (existingSameCell) {
+    await assertCanEditBy24h(actor.role, start);
     const removedBrief = describeShiftBrief(existingSameCell);
     await prisma.shift.delete({ where: { id: existingSameCell.id } });
     scheduleAdminsEmployeeShiftNotify({
@@ -349,13 +374,33 @@ export async function toggleBrigadeAssignment(input: { brigadeId: string; dayOfW
     include: { zone: true }
   });
 
-  await prisma.shift.deleteMany({
-    where: {
-      userId: actor.id,
-      weekStartDate,
-      dayOfWeek,
-      status: { in: [ShiftStatus.PLANNED, ShiftStatus.IN_PROGRESS] }
-    }
+  await assertCanEditBy24h(actor.role, start);
+  await assertSingleShiftPerDay(actor.id, weekStartDate, dayOfWeek, shiftsReplaced.map((s) => s.id));
+  await assertNoOverlap(actor.id, start, end, shiftsReplaced.map((s) => s.id));
+  await assertZoneLimit(zone.id, dayOfWeek, brigade.startTime, brigade.endTime, weekStartDate, actor.role !== UserRole.EMPLOYEE);
+
+  const shift = await prisma.$transaction(async (tx) => {
+    await tx.shift.deleteMany({
+      where: {
+        userId: actor.id,
+        weekStartDate,
+        dayOfWeek,
+        status: { in: [ShiftStatus.PLANNED, ShiftStatus.IN_PROGRESS] }
+      }
+    });
+    return tx.shift.create({
+      data: {
+        userId: actor.id,
+        zoneId: zone.id,
+        weekStartDate,
+        dayOfWeek,
+        startTime: brigade.startTime,
+        endTime: brigade.endTime,
+        source: ShiftSource.SELF,
+        createdById: actor.id,
+        updatedById: actor.id
+      }
+    });
   });
 
   for (const replaced of shiftsReplaced) {
@@ -367,20 +412,6 @@ export async function toggleBrigadeAssignment(input: { brigadeId: string; dayOfW
       excludeUserIds: [actor.id]
     });
   }
-
-  const shift = await prisma.shift.create({
-    data: {
-      userId: actor.id,
-      zoneId: zone.id,
-      weekStartDate,
-      dayOfWeek,
-      startTime: brigade.startTime,
-      endTime: brigade.endTime,
-      source: ShiftSource.SELF,
-      createdById: actor.id,
-      updatedById: actor.id
-    }
-  });
   if (actor.role === UserRole.EMPLOYEE) {
     scheduleAdminsEmployeeShiftNotify({
       type: AppNotificationType.SHIFT_ADDED_BY_EMPLOYEE,
@@ -428,6 +459,9 @@ export async function managerAssignBrigadeShift(input: unknown) {
   });
   if (existingSameCell) return;
 
+  const start = toDateTime(weekStartDate, data.dayOfWeek, brigade.startTime);
+  const end = endAt(start, brigade.startTime, brigade.endTime);
+
   const shiftsReplaced = await prisma.shift.findMany({
     where: {
       userId: data.userId,
@@ -438,32 +472,32 @@ export async function managerAssignBrigadeShift(input: unknown) {
     include: { zone: true }
   });
 
-  await prisma.shift.deleteMany({
-    where: {
-      userId: data.userId,
-      weekStartDate,
-      dayOfWeek: data.dayOfWeek,
-      status: { in: [ShiftStatus.PLANNED, ShiftStatus.IN_PROGRESS] }
-    }
-  });
-
-  const start = toDateTime(weekStartDate, data.dayOfWeek, brigade.startTime);
-  const end = endAt(start, brigade.startTime, brigade.endTime);
-  await assertNoOverlap(data.userId, start, end);
+  await assertSingleShiftPerDay(data.userId, weekStartDate, data.dayOfWeek, shiftsReplaced.map((s) => s.id));
+  await assertNoOverlap(data.userId, start, end, shiftsReplaced.map((s) => s.id));
   await assertZoneLimit(zone.id, data.dayOfWeek, brigade.startTime, brigade.endTime, weekStartDate, true);
 
-  const shift = await prisma.shift.create({
-    data: {
-      userId: data.userId,
-      zoneId: zone.id,
-      weekStartDate,
-      dayOfWeek: data.dayOfWeek,
-      startTime: brigade.startTime,
-      endTime: brigade.endTime,
-      source: ShiftSource.ADMIN,
-      createdById: actor.id,
-      updatedById: actor.id
-    }
+  const shift = await prisma.$transaction(async (tx) => {
+    await tx.shift.deleteMany({
+      where: {
+        userId: data.userId,
+        weekStartDate,
+        dayOfWeek: data.dayOfWeek,
+        status: { in: [ShiftStatus.PLANNED, ShiftStatus.IN_PROGRESS] }
+      }
+    });
+    return tx.shift.create({
+      data: {
+        userId: data.userId,
+        zoneId: zone.id,
+        weekStartDate,
+        dayOfWeek: data.dayOfWeek,
+        startTime: brigade.startTime,
+        endTime: brigade.endTime,
+        source: ShiftSource.ADMIN,
+        createdById: actor.id,
+        updatedById: actor.id
+      }
+    });
   });
   await writeAuditLog({
     actorUserId: actor.id,
@@ -727,10 +761,10 @@ export async function updateShift(input: unknown, forceOverride = false) {
   const start = toDateTime(weekStartDate, dayOfWeek, startTime);
   const end = endAt(start, startTime, endTime);
   await assertCanEditBy24h(actor.role, start);
-  await assertSingleShiftPerDay(current.userId, weekStartDate, dayOfWeek, current.id);
+  await assertSingleShiftPerDay(current.userId, weekStartDate, dayOfWeek, [current.id]);
   await assertNoOverlap(current.userId, start, end, [current.id]);
   const isAdmin = actor.role === UserRole.ADMIN || actor.role === UserRole.SUPER_ADMIN;
-  await assertZoneLimit(zoneId, dayOfWeek, startTime, endTime, weekStartDate, isAdmin && forceOverride);
+  await assertZoneLimit(zoneId, dayOfWeek, startTime, endTime, weekStartDate, isAdmin && forceOverride, current.id);
   await prisma.shift.update({ where: { id: current.id }, data: { ...parsed, updatedById: actor.id } });
   await writeAuditLog({ actorUserId: actor.id, action: "UPDATE_SHIFT", entityType: "Shift", entityId: current.id, payload: parsed });
   if (actor.role === UserRole.EMPLOYEE) {
@@ -782,6 +816,7 @@ export async function startShift(shiftId: string) {
   const user = await requireAuth();
   const shift = await prisma.shift.findUniqueOrThrow({ where: { id: shiftId } });
   if (shift.userId !== user.id) throw new Error("Можно начать только свою смену.");
+  if (shift.status !== ShiftStatus.PLANNED) throw new Error("Начать можно только запланированную смену.");
   const active = await prisma.shift.count({ where: { userId: user.id, status: ShiftStatus.IN_PROGRESS } });
   if (active > 0) throw new Error("У вас уже есть активная смена.");
   await prisma.shift.update({ where: { id: shiftId }, data: { status: ShiftStatus.IN_PROGRESS } });
@@ -800,10 +835,12 @@ export async function endShift(shiftId: string) {
   const shift = await prisma.shift.findUniqueOrThrow({ where: { id: shiftId } });
   if (shift.userId !== user.id) throw new Error("Можно завершить только свою смену.");
   if (shift.status !== ShiftStatus.IN_PROGRESS) throw new Error("Смена не запущена.");
+  const existingLog = await prisma.shiftTimeLog.findUnique({ where: { shiftId } });
+  const plannedStart = toDateTime(shift.weekStartDate, shift.dayOfWeek, shift.startTime);
   await prisma.shift.update({ where: { id: shiftId }, data: { status: ShiftStatus.COMPLETED } });
   await prisma.shiftTimeLog.upsert({
     where: { shiftId },
-    create: { shiftId, userId: user.id, endedAt: new Date() },
+    create: { shiftId, userId: user.id, startedAt: existingLog?.startedAt ?? plannedStart, endedAt: new Date() },
     update: { endedAt: new Date() }
   });
   await writeAuditLog({ actorUserId: user.id, action: "END_SHIFT", entityType: "Shift", entityId: shiftId });
@@ -819,7 +856,6 @@ export async function submitShiftReport(input: unknown) {
   });
   if (shift.userId !== user.id) throw new Error("Можно отправлять отчет только по своей смене.");
   if (shift.status === ShiftStatus.CANCELLED) throw new Error("Смена отменена, отчёт недоступен.");
-  if (shift.report?.status === ShiftReportStatus.ACCEPTED) throw new Error("Отчёт уже принят.");
 
   const expectedPhotoPath = getReportPhotoApiPath(data.shiftId);
   const legacyPhotoPath = `/uploads/reports/${data.shiftId}.jpg`;
@@ -830,20 +866,34 @@ export async function submitShiftReport(input: unknown) {
     throw new Error("Фото рабочего места не найдено. Сделайте снимок и загрузите снова.");
   }
 
+  const workedMinutes = computeWorkedMinutes(data.workStartTime, data.workEndTime);
+  const workStartedAt = toDateTime(shift.weekStartDate, shift.dayOfWeek, data.workStartTime);
+  let workEndedAt = toDateTime(shift.weekStartDate, shift.dayOfWeek, data.workEndTime);
+  if (workEndedAt.getTime() <= workStartedAt.getTime()) {
+    workEndedAt = addDays(workEndedAt, 1);
+  }
+
   const { reportIdForPath } = await prisma.$transaction(async (tx) => {
-    // Только поля, которые есть у любого Prisma Client: без status/updatedAt — иначе «Unknown argument»
-    // на старых клиентах; updatedAt подставляет БД (@default + @updatedAt в schema).
+    const freshReport = await tx.shiftReport.findUnique({ where: { shiftId: data.shiftId } });
+    if (freshReport?.status === ShiftReportStatus.ACCEPTED) throw new Error("Отчёт уже принят.");
+
     const rep = await tx.shiftReport.upsert({
       where: { shiftId: data.shiftId },
       create: {
         shiftId: data.shiftId,
         userId: user.id,
         text: data.text.trim(),
-        workplacePhotoPath: expectedPhotoPath
+        workplacePhotoPath: expectedPhotoPath,
+        workStartTime: data.workStartTime,
+        workEndTime: data.workEndTime,
+        workedMinutes
       },
       update: {
         text: data.text.trim(),
-        workplacePhotoPath: expectedPhotoPath
+        workplacePhotoPath: expectedPhotoPath,
+        workStartTime: data.workStartTime,
+        workEndTime: data.workEndTime,
+        workedMinutes
       }
     });
 
@@ -853,8 +903,13 @@ export async function submitShiftReport(input: unknown) {
     });
     await tx.shiftTimeLog.upsert({
       where: { shiftId: data.shiftId },
-      create: { shiftId: data.shiftId, userId: user.id, endedAt: new Date() },
-      update: { endedAt: new Date() }
+      create: {
+        shiftId: data.shiftId,
+        userId: user.id,
+        startedAt: workStartedAt,
+        endedAt: workEndedAt
+      },
+      update: { startedAt: workStartedAt, endedAt: workEndedAt }
     });
     return { reportIdForPath: rep.id };
   });
@@ -863,7 +918,7 @@ export async function submitShiftReport(input: unknown) {
     actorUserId: user.id,
     action: "SUBMIT_SHIFT_REPORT",
     entityType: "ShiftReport",
-    entityId: shift.id,
+    entityId: reportIdForPath,
     payload: { reportId: reportIdForPath }
   });
 
@@ -901,7 +956,7 @@ export async function updateMyShiftReport(input: unknown) {
   const data = updateReportSchema.parse(input);
   const report = await prisma.shiftReport.findUnique({
     where: { id: data.reportId },
-    select: { id: true, userId: true, status: true }
+    select: { id: true, userId: true, status: true, shiftId: true, shift: { select: { weekStartDate: true, dayOfWeek: true } } }
   });
   if (!report) throw new Error("Отчёт не найден.");
   if (report.userId !== user.id) throw new Error("Можно редактировать только свой отчёт.");
@@ -909,9 +964,30 @@ export async function updateMyShiftReport(input: unknown) {
     throw new Error("Редактирование доступно только до проверки отчёта.");
   }
 
-  await prisma.shiftReport.update({
-    where: { id: report.id },
-    data: { text: data.text.trim() }
+  const updateData: Prisma.ShiftReportUpdateInput = { text: data.text.trim() };
+  let workStartedAt: Date | undefined;
+  let workEndedAt: Date | undefined;
+  if (data.workStartTime && data.workEndTime) {
+    const workedMinutes = computeWorkedMinutes(data.workStartTime, data.workEndTime);
+    updateData.workStartTime = data.workStartTime;
+    updateData.workEndTime = data.workEndTime;
+    updateData.workedMinutes = workedMinutes;
+    workStartedAt = toDateTime(report.shift.weekStartDate, report.shift.dayOfWeek, data.workStartTime);
+    workEndedAt = toDateTime(report.shift.weekStartDate, report.shift.dayOfWeek, data.workEndTime);
+    if (workEndedAt.getTime() <= workStartedAt.getTime()) {
+      workEndedAt = addDays(workEndedAt, 1);
+    }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.shiftReport.update({ where: { id: report.id }, data: updateData });
+    if (workStartedAt && workEndedAt) {
+      await tx.shiftTimeLog.upsert({
+        where: { shiftId: report.shiftId },
+        create: { shiftId: report.shiftId, userId: user.id, startedAt: workStartedAt, endedAt: workEndedAt },
+        update: { startedAt: workStartedAt, endedAt: workEndedAt }
+      });
+    }
   });
   await writeAuditLog({
     actorUserId: user.id,
@@ -921,6 +997,27 @@ export async function updateMyShiftReport(input: unknown) {
   });
   revalidatePath("/reports");
   revalidatePath(`/reports/${report.id}`);
+  revalidatePath("/me");
+}
+
+/** Сумма отработанных минут за текущий календарный месяц (по дате смены, Москва). */
+export async function getMonthlyWorkedMinutesForUser(userId: string): Promise<number> {
+  const { year, month } = getCurrentAppMonth();
+  const reports = await prisma.shiftReport.findMany({
+    where: { userId, workedMinutes: { not: null } },
+    select: { userId: true, workedMinutes: true, shift: { select: { weekStartDate: true, dayOfWeek: true } } }
+  });
+  return groupMonthlyWorkedByUser(reports, year, month).get(userId) ?? 0;
+}
+
+/** Карта userId → минуты за текущий месяц (для админки). */
+export async function getMonthlyWorkedMinutesByUser(): Promise<Map<string, number>> {
+  const { year, month } = getCurrentAppMonth();
+  const reports = await prisma.shiftReport.findMany({
+    where: { workedMinutes: { not: null } },
+    select: { userId: true, workedMinutes: true, shift: { select: { weekStartDate: true, dayOfWeek: true } } }
+  });
+  return groupMonthlyWorkedByUser(reports, year, month);
 }
 
 export async function acceptShiftReportWithAccrual(input: unknown) {
@@ -1150,7 +1247,7 @@ export async function addAllowedTelegramUser(input: unknown) {
     }
   });
   await prisma.user.updateMany({
-    where: { telegramUsername: data.username, role: { not: UserRole.SUPER_ADMIN } },
+    where: { telegramUsername: data.username, role: UserRole.EMPLOYEE },
     data: { isActive: true }
   });
   const userIdsToFlag = usersForMatch
@@ -1214,10 +1311,27 @@ export async function adminSetTelegramUserManager(input: unknown) {
 
 export async function toggleAllowedTelegramUser(id: string, active: boolean) {
   const actor = await requireRole([UserRole.SUPER_ADMIN]);
-  await prisma.allowedTelegramUser.update({
-    where: { id },
-    data: active ? { isActive: true } : { isActive: false, telegramId: null }
-  });
+  if (active) {
+    await prisma.allowedTelegramUser.update({
+      where: { id },
+      data: { isActive: true }
+    });
+  } else {
+    const allowed = await prisma.allowedTelegramUser.findUnique({
+      where: { id },
+      select: { username: true }
+    });
+    await prisma.allowedTelegramUser.update({
+      where: { id },
+      data: { isActive: false, telegramId: null }
+    });
+    if (allowed?.username) {
+      await prisma.user.updateMany({
+        where: { telegramUsername: allowed.username, role: { not: UserRole.SUPER_ADMIN } },
+        data: { isActive: false }
+      });
+    }
+  }
   await writeAuditLog({
     actorUserId: actor.id,
     action: active ? "ENABLE_TELEGRAM_USER" : "DISABLE_TELEGRAM_USER",

@@ -12,8 +12,7 @@ const POLL_MS = 50;
 const POLL_MAX = 80;
 
 const BUILD_REF = process.env.NEXT_PUBLIC_BUILD_REF?.trim();
-const SHOW_DEV_LOGIN =
-  process.env.NEXT_PUBLIC_TELEGRAM_AUTH_DEV === "true" && process.env.NODE_ENV !== "production";
+const SHOW_DEV_LOGIN = process.env.NEXT_PUBLIC_TELEGRAM_AUTH_DEV === "true";
 
 type LoginMode = "detecting" | "mini_app" | "browser" | "error";
 
@@ -45,30 +44,45 @@ export default function TelegramLoginPage() {
           try {
             WebApp.ready();
             WebApp.expand();
-            const res = await fetch("/api/telegram/auth", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              credentials: "include",
-              body: JSON.stringify({ initData })
-            });
-            const data = (await res.json()) as AccessDeniedPayload & {
-              error?: string;
-              onboardingRequired?: boolean;
-            };
-            if (isAccessDeniedResponse(res.status, data)) {
-              window.location.replace("/access-denied");
-              return;
+            let lastError: Error | null = null;
+            for (let attempt = 0; attempt < 3; attempt++) {
+              try {
+                const res = await fetch("/api/telegram/auth", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  credentials: "include",
+                  body: JSON.stringify({ initData })
+                });
+                const data = (await res.json()) as AccessDeniedPayload & {
+                  error?: string;
+                  onboardingRequired?: boolean;
+                };
+                if (isAccessDeniedResponse(res.status, data)) {
+                  window.location.replace("/access-denied");
+                  return;
+                }
+                if (!res.ok) throw new Error(data.error ?? "Авторизация не удалась");
+                const onboarding = Boolean(data.onboardingRequired);
+                window.location.replace(onboarding ? "/welcome" : "/schedule");
+                return;
+              } catch (e) {
+                lastError = e instanceof Error ? e : new Error("Ошибка авторизации");
+                if (attempt < 2) {
+                  await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+                }
+              }
             }
-            if (!res.ok) throw new Error(data.error ?? "Авторизация не удалась");
-            const onboarding = Boolean(data.onboardingRequired);
-            window.location.replace(onboarding ? "/welcome" : "/schedule");
-            return;
+            throw lastError ?? new Error("Ошибка авторизации");
           } catch (e) {
             doneRef.current = false;
             setError(e instanceof Error ? e.message : "Ошибка авторизации");
             setMode("error");
             return;
           }
+        }
+        if (WebApp && !initData) {
+          if (!cancelled && !doneRef.current) setMode("browser");
+          return;
         }
         await new Promise((r) => setTimeout(r, POLL_MS));
       }

@@ -4,14 +4,16 @@ import { BRIGADES } from "@/lib/brigades";
 import { BrigadeBoard } from "@/components/BrigadeBoard";
 import { WeekModeSwitch } from "@/components/WeekModeSwitch";
 import { canOpenManagerPanel } from "@/lib/managerPanel";
-import { catchDb } from "@/lib/dbBoundary";
+import { catchAuth, catchDb } from "@/lib/dbBoundary";
 import { prisma } from "@/lib/prisma";
 import { prismaUserShiftBoardSelect } from "@/lib/prismaSafeUserInclude";
 import { getWeekStart } from "@/lib/utils";
 import { addDays } from "date-fns";
 
 export default async function SchedulePage({ searchParams }: { searchParams: Promise<{ week?: string }> }) {
-  const user = await requireAuth();
+  const authResult = await catchAuth(() => requireAuth());
+  if (!authResult.ok) return <ServiceUnavailable scope="schedule" />;
+  const user = authResult.data;
   const params = await searchParams;
   const weekMode: "current" | "next" = params.week === "next" ? "next" : "current";
   const currentWeekStart = getWeekStart(new Date());
@@ -27,24 +29,36 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
   );
   if (!shiftsLoaded.ok) return <ServiceUnavailable scope="schedule/shifts" />;
 
-  const employeesLoaded = canManageSchedule
-    ? await catchDb("schedule/employees", () =>
-        prisma.user.findMany({
-          where: { isActive: true },
-          orderBy: { name: "asc" },
-          select: {
-            id: true,
-            name: true,
-            color: true,
-            telegramPhotoUrl: true
-          }
-        })
-      )
-    : ({ ok: true as const, data: [] });
+  let assignableEmployees: {
+    id: string;
+    name: string;
+    color: string;
+    telegramPhotoUrl: string | null;
+  }[] = [];
+  if (canManageSchedule) {
+    const employeesLoaded = await catchDb("schedule/employees", () =>
+      prisma.user.findMany({
+        where: { isActive: true },
+        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          name: true,
+          color: true,
+          telegramPhotoUrl: true
+        }
+      })
+    );
+    if (!employeesLoaded.ok) return <ServiceUnavailable scope="schedule/employees" />;
+    assignableEmployees = employeesLoaded.data.map((u) => ({
+      id: u.id,
+      name: u.name,
+      color: u.color,
+      telegramPhotoUrl: u.telegramPhotoUrl ?? null
+    }));
+  }
 
   try {
     const shifts = shiftsLoaded.data;
-    const assignableEmployees = employeesLoaded.ok ? employeesLoaded.data : [];
     const allowedKeys = new Set(BRIGADES.map((b) => `${b.zoneName}|${b.startTime}|${b.endTime}`));
     const boardShifts = shifts
       .filter((s) => allowedKeys.has(`${s.zone.name}|${s.startTime}|${s.endTime}`))
@@ -76,12 +90,7 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
           weekStartDateIso={weekStartDate.toISOString()}
           weekMode={weekMode}
           canManageSchedule={canManageSchedule}
-          assignableEmployees={assignableEmployees.map((u) => ({
-            id: u.id,
-            name: u.name,
-            color: u.color,
-            telegramPhotoUrl: u.telegramPhotoUrl ?? null
-          }))}
+          assignableEmployees={assignableEmployees}
         />
       </div>
     );

@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
-import { buildSessionPayload, hashToken, signSessionToken } from "@/lib/auth";
+import { buildSessionPayload, hashToken, signSessionToken, SESSION_TTL_SECONDS } from "@/lib/auth";
 import { resolveAppPublicBaseUrl } from "@/lib/appUrl";
 import { prismaUserAccessSessionSelect } from "@/lib/prismaSafeUserInclude";
 import { prisma } from "@/lib/prisma";
 import { sessionCookieSecure } from "@/lib/sessionCookie";
-
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
 
 export async function GET(_: Request, { params }: { params: Promise<{ token: string }> }) {
   const appBase = resolveAppPublicBaseUrl();
@@ -13,26 +11,34 @@ export async function GET(_: Request, { params }: { params: Promise<{ token: str
   try {
     const { token } = await params;
     const tokenHash = hashToken(token);
+    const now = new Date();
+
+    const consumed = await prisma.accessToken.updateMany({
+      where: {
+        tokenHash,
+        isActive: true,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }]
+      },
+      data: { lastUsedAt: now, isActive: false }
+    });
+
+    if (consumed.count !== 1) {
+      return failRedirect;
+    }
+
     const accessToken = await prisma.accessToken.findFirst({
-      where: { tokenHash, isActive: true },
+      where: { tokenHash },
       include: { user: { select: prismaUserAccessSessionSelect } }
     });
 
     if (!accessToken || !accessToken.user.isActive) {
-      return NextResponse.redirect(new URL("/need-link", appBase));
+      return failRedirect;
     }
-    if (accessToken.expiresAt && accessToken.expiresAt < new Date()) {
-      return NextResponse.redirect(new URL("/need-link", appBase));
-    }
-
-    await prisma.accessToken.update({
-      where: { id: accessToken.id },
-      data: { lastUsedAt: new Date() }
-    });
 
     const jwt = await signSessionToken(buildSessionPayload(accessToken.user));
+    const redirectPath = accessToken.user.profileCompleted ? "/schedule" : "/welcome";
 
-    const res = NextResponse.redirect(new URL("/schedule", appBase));
+    const res = NextResponse.redirect(new URL(redirectPath, appBase));
     res.cookies.set("ps_session", jwt, {
       httpOnly: true,
       sameSite: "lax",
@@ -40,6 +46,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ token: str
       path: "/",
       maxAge: SESSION_TTL_SECONDS
     });
+
     return res;
   } catch (e) {
     console.error("[api/login/token]", e);

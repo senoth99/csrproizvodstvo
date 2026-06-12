@@ -1,28 +1,36 @@
 import { ServiceUnavailable } from "@/components/ServiceUnavailable";
 import { ReportStatusBadge } from "@/components/ReportStatusBadge";
+import { ReportsExcelDownload } from "@/components/ReportsExcelDownload";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { getReports } from "@/app/actions";
-import { catchDb } from "@/lib/dbBoundary";
-import { getCurrentUser, requireAuth } from "@/lib/auth";
+import { catchAuth, catchDb } from "@/lib/dbBoundary";
+import { requireAuth } from "@/lib/auth";
 import { formatDateRu, isoFromWeekDay, weekDays } from "@/lib/utils";
+import { formatWorkedMinutes } from "@/lib/workedHours";
 
 export default async function ReportsPage() {
-  await requireAuth();
+  const authResult = await catchAuth(() => requireAuth());
+  if (!authResult.ok) return <ServiceUnavailable scope="reports" />;
+  const user = authResult.data;
   const reportsResult = await catchDb("reports", () => getReports());
   if (!reportsResult.ok) return <ServiceUnavailable scope="reports" />;
   const reports = reportsResult.data;
-  const user = await getCurrentUser();
-  const isAdmin = Boolean(user?.isManager) || user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
+  const isAdmin = Boolean(user.isManager) || user.role === "ADMIN" || user.role === "SUPER_ADMIN";
 
   try {
     return (
       <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-bold uppercase tracking-display sm:text-3xl">Отчеты</h1>
-          {!isAdmin ? (
-            <p className="text-sm text-muted">Только ваши отчёты по сменам.</p>
-          ) : null}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold uppercase tracking-display sm:text-3xl">Отчеты</h1>
+            {!isAdmin ? (
+              <p className="text-sm text-muted">Только ваши отчёты по сменам.</p>
+            ) : (
+              <p className="text-sm text-muted">Все отчёты сотрудников и выгрузка в Excel.</p>
+            )}
+          </div>
+          {isAdmin ? <ReportsExcelDownload /> : null}
         </div>
 
         {reports.length === 0 ? (
@@ -48,6 +56,12 @@ export default async function ReportsPage() {
                         <ReportStatusBadge status={r.status} />
                       </div>
                       <p className="text-xs text-muted">{meta}</p>
+                      {r.workStartTime && r.workEndTime ? (
+                        <p className="text-xs text-muted">
+                          Работа: {r.workStartTime}–{r.workEndTime}
+                          {r.workedMinutes ? ` · ${formatWorkedMinutes(r.workedMinutes)}` : null}
+                        </p>
+                      ) : null}
                       <p className="line-clamp-2 text-sm text-foreground">{r.text}</p>
                       <p className="text-xs text-muted">Отправлено {formatDateRu(r.createdAt, "dd.MM.yyyy HH:mm")}</p>
                     </div>

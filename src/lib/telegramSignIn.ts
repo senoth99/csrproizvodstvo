@@ -2,10 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma, normalizeDatabaseUrlEnv } from "@/lib/prisma";
 import { UserRole, type UserRole as UserRoleValue } from "@/lib/enums";
 import { ACCESS_DENIED_CODE } from "@/lib/accessDenied";
-import { buildSessionPayload, signSessionToken } from "@/lib/auth";
+import { buildSessionPayload, signSessionToken, SESSION_TTL_SECONDS } from "@/lib/auth";
 import { sessionCookieSecure } from "@/lib/sessionCookie";
-
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
 
 /** Mini App payload from initData JSON */
 export type TgMiniAppUser = {
@@ -16,11 +14,16 @@ export type TgMiniAppUser = {
   photo_url?: string;
 };
 
-export async function getTelegramAllowanceRole(tgUser: TgMiniAppUser): Promise<UserRoleValue | null> {
+export type TelegramAllowance = {
+  role: UserRoleValue;
+  isManager: boolean;
+  allowedId: string | null;
+};
+
+export async function resolveTelegramAllowance(tgUser: TgMiniAppUser): Promise<TelegramAllowance | null> {
   const rawAdminUser = process.env.TELEGRAM_ADMIN_USERNAME?.trim();
-  const adminUsername = (rawAdminUser && rawAdminUser.length > 0 ? rawAdminUser : "contact_voropaev")
-    .replace(/^@+/, "")
-    .toLowerCase();
+  const adminUsername =
+    rawAdminUser && rawAdminUser.length > 0 ? rawAdminUser.replace(/^@+/, "").toLowerCase() : null;
   const adminTgId = process.env.TELEGRAM_ADMIN_TELEGRAM_ID?.trim();
   const normalizedUsername = (tgUser.username ?? "").toLowerCase();
   let allowed =
@@ -34,14 +37,23 @@ export async function getTelegramAllowanceRole(tgUser: TgMiniAppUser): Promise<U
       where: { telegramId: String(tgUser.id), isActive: true }
     });
   }
-  const fallbackByUsername = normalizedUsername.length > 0 && normalizedUsername === adminUsername;
+  const fallbackByUsername =
+    adminUsername !== null && normalizedUsername.length > 0 && normalizedUsername === adminUsername;
   const fallbackById = Boolean(adminTgId && String(tgUser.id) === adminTgId);
   const fallbackAdminAllowed = fallbackByUsername || fallbackById;
   if (!allowed && !fallbackAdminAllowed) return null;
-  return (
-    (allowed?.role as UserRoleValue | undefined) ??
-    (fallbackAdminAllowed ? UserRole.SUPER_ADMIN : UserRole.EMPLOYEE)
-  );
+  return {
+    role:
+      (allowed?.role as UserRoleValue | undefined) ??
+      (fallbackAdminAllowed ? UserRole.SUPER_ADMIN : UserRole.EMPLOYEE),
+    isManager: allowed?.isManager ?? false,
+    allowedId: allowed?.id ?? null
+  };
+}
+
+export async function getTelegramAllowanceRole(tgUser: TgMiniAppUser): Promise<UserRoleValue | null> {
+  const allowance = await resolveTelegramAllowance(tgUser);
+  return allowance?.role ?? null;
 }
 
 export type TelegramSessionOptions = {
@@ -54,7 +66,8 @@ export async function createSessionResponseFromTgUser(
   options?: TelegramSessionOptions
 ): Promise<NextResponse> {
   try {
-    const role = options?.forcedRole ?? (await getTelegramAllowanceRole(tgUser));
+    const allowance = options?.forcedRole ? null : await resolveTelegramAllowance(tgUser);
+    const role = options?.forcedRole ?? allowance?.role;
     if (!role) {
       return NextResponse.json(
         { error: "Доступ не выдан. Обратитесь к администратору.", code: ACCESS_DENIED_CODE },
@@ -69,16 +82,8 @@ export async function createSessionResponseFromTgUser(
     if (options?.forcedRole) {
       const prev = await prisma.user.findUnique({ where: { telegramId: String(tgUser.id) } });
       isManagerFlag = prev?.isManager ?? false;
-    } else if (normalizedUsername) {
-      const allow = await prisma.allowedTelegramUser.findFirst({
-        where: { username: normalizedUsername, isActive: true }
-      });
-      if (allow) isManagerFlag = allow.isManager;
-    } else if (tgUser.id != null) {
-      const allowById = await prisma.allowedTelegramUser.findFirst({
-        where: { telegramId: String(tgUser.id), isActive: true }
-      });
-      if (allowById) isManagerFlag = allowById.isManager;
+    } else {
+      isManagerFlag = allowance?.isManager ?? false;
     }
 
     const user = await prisma.user.upsert({
@@ -86,7 +91,6 @@ export async function createSessionResponseFromTgUser(
       update: {
         telegramUsername: normalizedUsername.length > 0 ? normalizedUsername : null,
         telegramPhotoUrl: tgUser.photo_url ?? null,
-        isActive: true,
         role,
         isManager: isManagerFlag,
         ...(options?.forcedRole
@@ -111,20 +115,42 @@ export async function createSessionResponseFromTgUser(
       }
     });
 
-    if (!options?.forcedRole && normalizedUsername.length > 0) {
+    if (!user.isActive) {
+      return NextResponse.json(
+        { error: "Доступ не выдан. Обратитесь к администратору.", code: ACCESS_DENIED_CODE },
+        { status: 403 }
+      );
+    }
+
+    if (!options?.forcedRole) {
       try {
         const tid = String(tgUser.id);
-        await prisma.allowedTelegramUser.updateMany({
-          where: {
-            telegramId: tid,
-            OR: [{ username: { not: normalizedUsername } }, { isActive: false }]
-          },
-          data: { telegramId: null }
-        });
-        await prisma.allowedTelegramUser.updateMany({
-          where: { username: normalizedUsername, isActive: true },
-          data: { telegramId: tid }
-        });
+        let allowedRow =
+          normalizedUsername.length > 0
+            ? await prisma.allowedTelegramUser.findFirst({
+                where: { username: normalizedUsername, isActive: true }
+              })
+            : null;
+        if (!allowedRow) {
+          allowedRow = await prisma.allowedTelegramUser.findFirst({
+            where: { telegramId: tid, isActive: true }
+          });
+        }
+        if (allowedRow) {
+          await prisma.allowedTelegramUser.update({
+            where: { id: allowedRow.id },
+            data: {
+              telegramId: tid,
+              ...(normalizedUsername.length > 0 && allowedRow.username !== normalizedUsername
+                ? { username: normalizedUsername }
+                : {})
+            }
+          });
+          await prisma.allowedTelegramUser.updateMany({
+            where: { telegramId: tid, id: { not: allowedRow.id } },
+            data: { telegramId: null }
+          });
+        }
       } catch (e) {
         console.warn("[createSessionResponseFromTgUser] allow telegramId sync:", e);
       }

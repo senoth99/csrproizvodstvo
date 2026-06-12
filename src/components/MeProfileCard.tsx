@@ -66,6 +66,8 @@ export function MeProfileCard({
             ) : null}
           </div>
 
+          {ok ? <p className="mt-3 text-sm text-accent">{ok}</p> : null}
+
           {editing ? (
             <form
               className="mt-4 space-y-3 border-t border-border pt-4"
@@ -123,7 +125,6 @@ export function MeProfileCard({
                   </button>
                 ) : null}
               </div>
-              {ok ? <p className="text-sm text-accent">{ok}</p> : null}
               {error ? <p className="text-sm font-medium text-foreground/85">{error}</p> : null}
             </form>
           ) : null}

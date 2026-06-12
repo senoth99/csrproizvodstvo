@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRoleApi } from "@/lib/auth";
+import { csvEscape } from "@/lib/csv";
 import { UserRole } from "@/lib/enums";
 import { prismaUserListNameSelect } from "@/lib/prismaSafeUserInclude";
 import { prisma } from "@/lib/prisma";
@@ -17,15 +18,18 @@ export async function GET() {
       console.error("[api/export/reports.csv]", e);
       return NextResponse.json({ error: "database_unavailable" }, { status: 503 });
     }
-    const header = "Сотрудник,Зона,Смена,Статус,Отчет,Создано";
+    const header = "Сотрудник,Зона,Смена,Начало работы,Конец работы,Часов,Статус,Отчет,Создано";
     const rows = reports.map((r) =>
       [
-        r.user.name,
-        r.shift.zone.name,
-        `${r.shift.startTime}-${r.shift.endTime}`,
-        r.status,
-        `"${r.text.replaceAll("\"", "\"\"")}"`,
-        r.createdAt.toISOString()
+        csvEscape(r.user.name),
+        csvEscape(r.shift.zone.name),
+        csvEscape(`${r.shift.startTime}-${r.shift.endTime}`),
+        csvEscape(r.workStartTime),
+        csvEscape(r.workEndTime),
+        csvEscape(r.workedMinutes != null ? (r.workedMinutes / 60).toFixed(1) : ""),
+        csvEscape(r.status),
+        csvEscape(r.text),
+        csvEscape(r.createdAt.toISOString())
       ].join(",")
     );
     return new NextResponse([header, ...rows].join("\n"), {

@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { Camera, ClipboardCheck, ImagePlus } from "lucide-react";
 import { submitShiftReport } from "@/app/actions";
 import { compressImageFile } from "@/lib/clientImageCompress";
+import { computeWorkedMinutes, formatWorkedMinutes } from "@/lib/workedHours";
 
 function formatShiftReportSubmitError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
@@ -20,14 +21,20 @@ function formatShiftReportSubmitError(err: unknown): string {
 
 export function CompleteShiftReportDialog({
   shiftId,
-  headline
+  headline,
+  defaultStartTime = "",
+  defaultEndTime = ""
 }: {
   shiftId: string;
   headline: string;
+  defaultStartTime?: string;
+  defaultEndTime?: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
+  const [workStartTime, setWorkStartTime] = useState(defaultStartTime);
+  const [workEndTime, setWorkEndTime] = useState(defaultEndTime);
   const [workplacePhotoPath, setWorkplacePhotoPath] = useState("");
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState("");
   const [photoUploading, setPhotoUploading] = useState(false);
@@ -60,8 +67,19 @@ export function CompleteShiftReportDialog({
     setOpen(false);
     setError("");
     setText("");
+    setWorkStartTime(defaultStartTime);
+    setWorkEndTime(defaultEndTime);
     resetPhoto();
   };
+
+  const workedPreview = (() => {
+    if (!workStartTime || !workEndTime) return null;
+    try {
+      return formatWorkedMinutes(computeWorkedMinutes(workStartTime, workEndTime));
+    } catch {
+      return null;
+    }
+  })();
 
   const handlePhotoSelected = async (file: File | undefined) => {
     if (!file) return;
@@ -140,13 +158,23 @@ export function CompleteShiftReportDialog({
                     setError("Напишите чуть подробнее — минимум 5 символов.");
                     return;
                   }
+                  if (!workStartTime || !workEndTime) {
+                    setError("Укажите время начала и окончания работы.");
+                    return;
+                  }
                   if (!workplacePhotoPath) {
                     setError("Добавьте фото рабочего места перед отправкой.");
                     return;
                   }
                   start(async () => {
                     try {
-                      await submitShiftReport({ shiftId, text, workplacePhotoPath });
+                      await submitShiftReport({
+                        shiftId,
+                        text,
+                        workplacePhotoPath,
+                        workStartTime,
+                        workEndTime
+                      });
                       setText("");
                       close();
                       router.refresh();
@@ -156,6 +184,48 @@ export function CompleteShiftReportDialog({
                   });
                 }}
               >
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-foreground" htmlFor={`work-start-${shiftId}`}>
+                      Начало работы
+                    </label>
+                    <input
+                      id={`work-start-${shiftId}`}
+                      type="time"
+                      className="w-full rounded-lg border border-border bg-transparent px-3 py-2 text-sm"
+                      value={workStartTime}
+                      onChange={(e) => {
+                        setWorkStartTime(e.target.value);
+                        setError("");
+                      }}
+                      disabled={pending}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-foreground" htmlFor={`work-end-${shiftId}`}>
+                      Конец работы
+                    </label>
+                    <input
+                      id={`work-end-${shiftId}`}
+                      type="time"
+                      className="w-full rounded-lg border border-border bg-transparent px-3 py-2 text-sm"
+                      value={workEndTime}
+                      onChange={(e) => {
+                        setWorkEndTime(e.target.value);
+                        setError("");
+                      }}
+                      disabled={pending}
+                      required
+                    />
+                  </div>
+                  {workedPreview ? (
+                    <p className="col-span-2 text-sm text-muted">
+                      Отработано: <span className="font-semibold text-foreground">{workedPreview}</span>
+                    </p>
+                  ) : null}
+                </div>
+
                 <div>
                   <label className="mb-2 block text-sm font-medium text-foreground" htmlFor={`shift-report-text-${shiftId}`}>
                     Что вы сделали за смену

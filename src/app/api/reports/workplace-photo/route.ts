@@ -1,9 +1,10 @@
 import { readFile } from "fs/promises";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getCurrentUser } from "@/lib/auth";
+import { AuthDbError, getCurrentUser } from "@/lib/auth";
 import { ShiftReportStatus, ShiftStatus, UserRole } from "@/lib/enums";
 import { prisma } from "@/lib/prisma";
+import { detectImageFromBuffer } from "@/lib/imageMagicBytes";
 import {
   getReportPhotoApiPath,
   getReportPhotoDiskPath,
@@ -29,6 +30,10 @@ export async function GET(req: Request) {
   try {
     user = await getCurrentUser();
   } catch (e) {
+    if (e instanceof AuthDbError) {
+      console.error("[api/reports/workplace-photo GET] auth DB", e);
+      return new NextResponse(null, { status: 503 });
+    }
     console.error("[api/reports/workplace-photo GET] session", e);
     return new NextResponse(null, { status: 503 });
   }
@@ -52,9 +57,12 @@ export async function GET(req: Request) {
     if (!diskPath) return new NextResponse(null, { status: 404 });
 
     const buf = await readFile(diskPath);
+    const detected = detectImageFromBuffer(buf);
+    if (!detected) return new NextResponse(null, { status: 415 });
+
     return new NextResponse(buf, {
       headers: {
-        "Content-Type": "image/jpeg",
+        "Content-Type": detected.mime,
         "Cache-Control": "private, max-age=3600"
       }
     });
@@ -69,6 +77,10 @@ export async function POST(req: Request) {
   try {
     user = await getCurrentUser();
   } catch (e) {
+    if (e instanceof AuthDbError) {
+      console.error("[api/reports/workplace-photo POST] auth DB", e);
+      return NextResponse.json({ error: "service_unavailable" }, { status: 503 });
+    }
     console.error("[api/reports/workplace-photo POST] session", e);
     return NextResponse.json({ error: "service_unavailable" }, { status: 503 });
   }
@@ -92,9 +104,6 @@ export async function POST(req: Request) {
   if (!(file instanceof File) || !file.size) {
     return NextResponse.json({ error: "file_required" }, { status: 400 });
   }
-  if (!file.type.startsWith("image/")) {
-    return NextResponse.json({ error: "invalid_file_type" }, { status: 400 });
-  }
   if (file.size > MAX_BYTES) {
     return NextResponse.json({ error: "file_too_large" }, { status: 400 });
   }
@@ -102,6 +111,11 @@ export async function POST(req: Request) {
   const buffer = Buffer.from(await file.arrayBuffer());
   if (buffer.length > MAX_BYTES) {
     return NextResponse.json({ error: "file_too_large" }, { status: 400 });
+  }
+
+  const detected = detectImageFromBuffer(buffer);
+  if (!detected) {
+    return NextResponse.json({ error: "invalid_file_type" }, { status: 400 });
   }
 
   try {
