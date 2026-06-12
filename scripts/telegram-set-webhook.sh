@@ -28,6 +28,12 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
+echo "--- getMe (проверка токена) ---"
+curl -sS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe" | jq '{ok, username: .result.username, id: .result.id}'
+
+echo "--- deleteWebhook (сброс старого URL) ---"
+curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/deleteWebhook" | jq .
+
 curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
   -H "Content-Type: application/json" \
   -d "$(jq -n --arg url "$WEBHOOK_URL" --arg secret "$TELEGRAM_WEBHOOK_SECRET" \

@@ -93,6 +93,7 @@ async function handleCallbackQuery(cb: TelegramCallbackQuery) {
 export async function POST(req: Request) {
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET?.trim();
   if (!secret) {
+    console.error("[api/telegram/webhook] TELEGRAM_WEBHOOK_SECRET не задан — Telegram получает отказ, бот молчит");
     if (process.env.NODE_ENV === "production") {
       return NextResponse.json({ error: "Задайте TELEGRAM_WEBHOOK_SECRET для webhook" }, { status: 503 });
     }
@@ -100,8 +101,14 @@ export async function POST(req: Request) {
       console.warn("[api/telegram/webhook] TELEGRAM_WEBHOOK_SECRET не задан — запросы разрешены в dev");
       devWebhookSecretWarned = true;
     }
-  } else if (req.headers.get("X-Telegram-Bot-Api-Secret-Token") !== secret) {
-    return new NextResponse("Forbidden", { status: 403 });
+  } else {
+    const header = req.headers.get("X-Telegram-Bot-Api-Secret-Token");
+    if (header !== secret) {
+      console.error(
+        "[api/telegram/webhook] secret mismatch — проверьте TELEGRAM_WEBHOOK_SECRET в .env и перезапустите telegram-set-webhook.sh"
+      );
+      return new NextResponse("Forbidden", { status: 403 });
+    }
   }
 
   let update: { message?: TelegramMessage; callback_query?: TelegramCallbackQuery };
@@ -123,6 +130,11 @@ export async function POST(req: Request) {
     }
 
     const text = msg.text?.trim() ?? "";
+    console.info("[api/telegram/webhook] message", {
+      from: msg.from.id,
+      username: msg.from.username ?? null,
+      text: text.slice(0, 80)
+    });
     const handled = await handleLoginMessage(msg);
     if (!handled) {
       if (/^\/start(?:@\w+)?$/i.test(text)) {

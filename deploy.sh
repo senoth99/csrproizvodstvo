@@ -44,8 +44,10 @@ if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
   if command -v jq >/dev/null 2>&1; then
     echo "==> Telegram webhook"
     bash scripts/telegram-set-webhook.sh
+    echo "==> Telegram diagnose"
+    bash scripts/telegram-diagnose.sh
   else
-    echo "WARN: jq не установлен — выполните: ./scripts/telegram-set-webhook.sh"
+    echo "WARN: jq не установлен — выполните: ./scripts/telegram-set-webhook.sh && ./scripts/telegram-diagnose.sh"
   fi
 fi
 
