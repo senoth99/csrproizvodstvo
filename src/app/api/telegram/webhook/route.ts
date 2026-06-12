@@ -52,6 +52,10 @@ async function handleLoginMessage(msg: TelegramMessage) {
 
   const role = await getTelegramAllowanceRole(tgUser);
   if (!role) {
+    await prisma.telegramLoginChallenge.updateMany({
+      where: { id: challenge.id, status: "pending" },
+      data: { status: "denied" }
+    });
     await telegramSendMessage(msg.chat.id, "Доступ не выдан. Обратитесь к администратору.");
     return true;
   }

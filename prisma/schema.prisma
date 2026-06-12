@@ -63,7 +63,7 @@ model TelegramLoginChallenge {
   id                String   @id @default(cuid())
   tokenHash         String   @unique
   expiresAt         DateTime
-  status            String   @default("pending") // pending | ready
+  status            String   @default("pending") // pending | ready | denied
   telegramId        String?
   telegramUsername  String?
   telegramFirstName String?

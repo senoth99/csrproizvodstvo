@@ -36,6 +36,8 @@ type StartPayload = {
 
 type CompletePayload = AccessDeniedPayload & {
   ok?: boolean;
+  ready?: boolean;
+  finishUrl?: string;
   waiting?: boolean;
   onboardingRequired?: boolean;
   error?: string;
@@ -124,11 +126,23 @@ export function TelegramBrowserLogin({
           if (res.status === 410) {
             clearStored();
             setError("Код входа устарел. Нажмите «Начать заново».");
+          } else if (res.status === 403) {
+            clearStored();
+            window.location.replace("/access-denied");
           } else {
             setError(data.error ?? "Не удалось завершить вход");
           }
           return true;
         }
+
+        if (data.ready && data.finishUrl) {
+          stopPolling();
+          clearStored();
+          // Полный переход — Safari надёжно сохраняет httpOnly cookie (fetch часто нет).
+          window.location.href = data.finishUrl;
+          return true;
+        }
+
         if (!data.ok) return false;
 
         stopPolling();
@@ -295,8 +309,8 @@ export function TelegramBrowserLogin({
     <div className="space-y-4">
       <ol className="list-decimal space-y-2 pl-5 text-sm text-muted">
         <li>
-          Нажмите <strong className="text-foreground">«Открыть бота»</strong> ниже (важно — ссылка с сайта, не просто чат
-          бота).
+          Нажмите <strong className="text-foreground">«Открыть бота»</strong> ниже — обязательно эту кнопку, не ищите бота
+          вручную в Telegram.
         </li>
         <li>В Telegram нажмите <strong className="text-foreground">Запустить / Start</strong>.</li>
         <li>Дождитесь ответа бота «Готово…».</li>
@@ -329,7 +343,9 @@ export function TelegramBrowserLogin({
             <span className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.15s]" />
             <span className="h-2 w-2 animate-bounce rounded-full bg-accent" />
           </div>
-          <p className="text-center text-xs text-muted">Ждём подтверждение в Telegram…</p>
+          <p className="text-center text-xs text-muted">
+            Ждём ответ бота «Готово» в Telegram… Если бот пишет «Доступ не выдан» — обратитесь к администратору.
+          </p>
         </div>
       ) : null}
 
