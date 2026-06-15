@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashToken } from "@/lib/auth";
 import { resolveAppPublicBaseUrl } from "@/lib/appUrl";
@@ -118,41 +119,41 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  try {
-    if (update.callback_query) {
-      await handleCallbackQuery(update.callback_query);
-      return NextResponse.json({ ok: true });
-    }
-
-    const msg = update.message;
-    if (!msg?.chat?.id || !msg.from) {
-      return NextResponse.json({ ok: true });
-    }
-
-    const text = msg.text?.trim() ?? "";
-    console.info("[api/telegram/webhook] message", {
-      from: msg.from.id,
-      username: msg.from.username ?? null,
-      text: text.slice(0, 80)
-    });
-    const handled = await handleLoginMessage(msg);
-    if (!handled) {
-      if (/^\/start(?:@\w+)?$/i.test(text)) {
-        const loginUrl = `${resolveAppPublicBaseUrl()}/telegram/login`;
-        await telegramSendMessage(
-          msg.chat.id,
-          `Вход с сайта: откройте ${loginUrl} и нажмите «Открыть бота в Telegram». Обычный /start в чате вход не включает.`
-        );
-      } else if (text.startsWith("/")) {
-        await telegramSendMessage(
-          msg.chat.id,
-          "Команда не распознана. Для входа используйте ссылку с сайта (раздел «Вход через Telegram»)."
-        );
+  after(async () => {
+    try {
+      if (update.callback_query) {
+        await handleCallbackQuery(update.callback_query);
+        return;
       }
+
+      const msg = update.message;
+      if (!msg?.chat?.id || !msg.from) return;
+
+      const text = msg.text?.trim() ?? "";
+      console.info("[api/telegram/webhook] message", {
+        from: msg.from.id,
+        username: msg.from.username ?? null,
+        text: text.slice(0, 80)
+      });
+      const handled = await handleLoginMessage(msg);
+      if (!handled) {
+        if (/^\/start(?:@\w+)?$/i.test(text)) {
+          const loginUrl = `${resolveAppPublicBaseUrl()}/telegram/login`;
+          await telegramSendMessage(
+            msg.chat.id,
+            `Вход с сайта: откройте ${loginUrl} и нажмите «Открыть бота в Telegram». Обычный /start в чате вход не включает.`
+          );
+        } else if (text.startsWith("/")) {
+          await telegramSendMessage(
+            msg.chat.id,
+            "Команда не распознана. Для входа используйте ссылку с сайта (раздел «Вход через Telegram»)."
+          );
+        }
+      }
+    } catch (e) {
+      console.error("[api/telegram/webhook:async]", e);
     }
-    return NextResponse.json({ ok: true });
-  } catch (e) {
-    console.error("[api/telegram/webhook]", e);
-    return NextResponse.json({ ok: true });
-  }
+  });
+
+  return NextResponse.json({ ok: true });
 }

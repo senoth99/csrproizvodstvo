@@ -180,10 +180,12 @@ export async function GET() {
 
     const buffer = await workbook.xlsx.writeBuffer();
     const filename = `otchety-${formatDateRu(new Date(), "yyyy-MM-dd")}.xlsx`;
-    return new NextResponse(buffer, {
+    const body = buffer instanceof ArrayBuffer ? buffer : new Uint8Array(buffer);
+    return new NextResponse(body, {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="${filename}"`
+        "Content-Disposition": `attachment; filename="otchety.xlsx"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        "Cache-Control": "private, no-store"
       }
     });
   } catch (e) {

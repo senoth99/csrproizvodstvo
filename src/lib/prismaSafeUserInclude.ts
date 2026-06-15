@@ -16,6 +16,86 @@ export const prismaUserShiftBoardSelect = {
 
 export const prismaUserListNameSelect = { id: true, name: true } as const;
 
+/** Поля User для сессии и страниц — без `include: true`, устойчивее к дрейфу схемы SQLite. */
+export const prismaUserSessionSelect = {
+  id: true,
+  name: true,
+  firstName: true,
+  lastName: true,
+  telegramId: true,
+  telegramUsername: true,
+  telegramPhotoUrl: true,
+  profileCompleted: true,
+  ndaSigned: true,
+  role: true,
+  isManager: true,
+  isActive: true,
+  color: true,
+  payoutDebtCents: true,
+  createdAt: true,
+  updatedAt: true
+} as const;
+
+/** Без `payoutDebtCents`, если колонка ещё не применена миграцией. */
+export const prismaUserSessionSelectLegacy = {
+  id: true,
+  name: true,
+  firstName: true,
+  lastName: true,
+  telegramId: true,
+  telegramUsername: true,
+  telegramPhotoUrl: true,
+  profileCompleted: true,
+  ndaSigned: true,
+  role: true,
+  isManager: true,
+  isActive: true,
+  color: true,
+  createdAt: true,
+  updatedAt: true
+} as const;
+
+export type PrismaUserSessionRow = {
+  id: string;
+  name: string;
+  firstName: string | null;
+  lastName: string | null;
+  telegramId: string | null;
+  telegramUsername: string | null;
+  telegramPhotoUrl: string | null;
+  profileCompleted: boolean;
+  ndaSigned: boolean;
+  role: string;
+  isManager: boolean;
+  isActive: boolean;
+  color: string;
+  payoutDebtCents: number;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export async function findSessionUserByIdSafe(userId: string): Promise<PrismaUserSessionRow | null> {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: prismaUserSessionSelect
+    });
+    if (!user || !user.isActive) return null;
+    return user;
+  } catch (firstError) {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: prismaUserSessionSelectLegacy
+      });
+      if (!user || !user.isActive) return null;
+      return { ...user, payoutDebtCents: 0 };
+    } catch {
+      throw firstError;
+    }
+  }
+}
+
 export const prismaUserAccessSessionSelect = {
   id: true,
   name: true,

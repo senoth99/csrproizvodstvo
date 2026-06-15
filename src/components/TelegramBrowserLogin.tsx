@@ -90,6 +90,8 @@ export function TelegramBrowserLogin({
   const [phase, setPhase] = useState<"idle" | "waiting" | "error">("idle");
   const [error, setError] = useState("");
   const [openUrl, setOpenUrl] = useState<string | null>(null);
+  const [finishUrl, setFinishUrl] = useState<string | null>(null);
+  const [botWarning, setBotWarning] = useState("");
   const tokenRef = useRef<string | null>(null);
   const pollingRef = useRef(false);
   const startingRef = useRef(false);
@@ -138,8 +140,9 @@ export function TelegramBrowserLogin({
         if (data.ready && data.finishUrl) {
           stopPolling();
           clearStored();
-          // Полный переход — Safari надёжно сохраняет httpOnly cookie (fetch часто нет).
-          window.location.href = data.finishUrl;
+          setFinishUrl(data.finishUrl);
+          // Полный переход — Safari/Chrome надёжно сохраняют httpOnly cookie (fetch часто нет).
+          window.location.assign(data.finishUrl);
           return true;
         }
 
@@ -254,6 +257,26 @@ export function TelegramBrowserLogin({
   }, [beginBrowserLogin, stopPolling]);
 
   useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/health/telegram");
+        const data = (await res.json()) as { ok?: boolean; hints?: string[] };
+        if (!cancelled && !data.ok && data.hints?.length) {
+          setBotWarning(
+            "Бот на сервере настроен не полностью — если Telegram не отвечает на Start, сообщите администратору."
+          );
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
       resumePollingFromStorage();
@@ -277,7 +300,11 @@ export function TelegramBrowserLogin({
       window.location.assign(openUrl);
       return;
     }
-    window.open(openUrl, "_blank", "noopener,noreferrer");
+    const tab = window.open(openUrl, "_blank", "noopener,noreferrer");
+    if (!tab) {
+      setError("Браузер заблокировал окно Telegram. Разрешите всплывающие окна или откройте ссылку вручную.");
+      window.location.assign(openUrl);
+    }
   }, [openUrl]);
 
   const devLogin = async () => {
@@ -347,6 +374,14 @@ export function TelegramBrowserLogin({
             Ждём ответ бота «Готово» в Telegram… Если бот пишет «Доступ не выдан» — обратитесь к администратору.
           </p>
         </div>
+      ) : null}
+
+      {botWarning ? <p className="text-center text-xs text-muted">{botWarning}</p> : null}
+
+      {finishUrl ? (
+        <a href={finishUrl} className="btn-primary flex min-h-[48px] w-full items-center justify-center touch-manipulation text-center">
+          Продолжить вход на сайте
+        </a>
       ) : null}
 
       {error ? <p className="text-center text-sm font-medium text-foreground/85">{error}</p> : null}

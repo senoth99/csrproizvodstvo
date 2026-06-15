@@ -99,7 +99,8 @@ export async function consumeBrowserLoginChallenge(token: BrowserLoginToken): Pr
 }
 
 export function browserLoginFinishUrl(rawToken: string): string {
-  return `/api/telegram/browser-auth/finish?token=${encodeURIComponent(rawToken)}`;
+  const base = resolveAppPublicBaseUrl();
+  return `${base}/api/telegram/browser-auth/finish?token=${encodeURIComponent(rawToken)}`;
 }
 
 export function redirectBrowserLoginSuccess(jwt: string, onboardingRequired: boolean): NextResponse {

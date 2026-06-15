@@ -7,12 +7,14 @@ import {
   BALANCE_AUDIT_ACTIONS,
   parseBalancePayload
 } from "@/lib/balanceLedger";
-import { catchDb } from "@/lib/dbBoundary";
+import { catchAuth, catchDb } from "@/lib/dbBoundary";
 import { prisma } from "@/lib/prisma";
 import { formatDateRu, formatMoneyRu } from "@/lib/utils";
 
 export default async function MeBalancePage() {
-  const user = await requireAuth();
+  const authResult = await catchAuth(() => requireAuth());
+  if (!authResult.ok) return <ServiceUnavailable scope="me/balance/auth" />;
+  const user = authResult.data;
 
   const loaded = await catchDb("me/balance", async () => {
     const [logs, row] = await Promise.all([

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { NextResponse } from "next/server";
 import { createHash, randomBytes } from "node:crypto";
 import { prisma } from "./prisma";
+import { findSessionUserByIdSafe } from "./prismaSafeUserInclude";
 import { UserRole, type UserRole as UserRoleValue } from "./enums";
 import { isNextHttpAccessFallbackError, isNextRedirectError } from "./dbBoundary";
 import { sessionSecretBytes } from "./sessionSecret";
@@ -225,8 +226,8 @@ export async function getCurrentUser() {
     if (!userId) return null;
 
     try {
-      const user = await prisma.user.findUnique({ where: { id: userId } });
-      if (!user || !user.isActive) return null;
+      const user = await findSessionUserByIdSafe(userId);
+      if (!user) return null;
       return user;
     } catch (e) {
       console.error("[getCurrentUser] DB error:", e);

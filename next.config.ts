@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["@prisma/client"],
+  serverExternalPackages: ["@prisma/client", "exceljs"],
   webpack: (config, { dev }) => {
     if (dev) {
       // Файловый pack-cache давал ENOENT; `false` иногда режет связку CSS+HMR — memory стабильнее для стилей.

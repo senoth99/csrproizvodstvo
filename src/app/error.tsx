@@ -12,10 +12,16 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
   return (
     <div className="mx-auto flex min-h-[50vh] max-w-lg flex-col items-center justify-center gap-4 px-6 text-center">
       <div className="w-full">
-        <h1 className="ui-page-title">Ошибка сервера</h1>
+        <h1 className="ui-page-title">Ошибка загрузки</h1>
         <p className="mt-4 text-sm text-muted">
+          Сервер не смог отрисовать страницу. Чаще всего после обновления кода не выполнен{" "}
+          <code className="rounded bg-white/[0.06] px-1 py-0.5 font-mono text-[11px]">./deploy.sh</code>{" "}
+          (миграции SQLite / Prisma).
+        </p>
+        <p className="mt-3 text-sm text-muted">
           Если вы администратор: проверьте{" "}
-          <code className="rounded bg-white/[0.06] px-1 py-0.5 font-mono text-[11px]">DATABASE_URL</code> и лог приложения. Для синхронизации схемы:
+          <code className="rounded bg-white/[0.06] px-1 py-0.5 font-mono text-[11px]">DATABASE_URL</code> и лог
+          приложения на сервере.
         </p>
         <ul className="mt-3 list-inside space-y-1.5 text-left text-[13px] leading-snug text-muted">
           <li>

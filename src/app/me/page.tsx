@@ -1,18 +1,20 @@
 import Link from "next/link";
 import { addDays } from "date-fns";
 import { ChevronRight, QrCode } from "lucide-react";
+import { ServiceUnavailable } from "@/components/ServiceUnavailable";
 import { MeProfileCard } from "@/components/MeProfileCard";
 import { MyShiftsSection } from "@/components/MyShiftsSection";
-import { ServiceUnavailable } from "@/components/ServiceUnavailable";
 import { getMonthlyWorkedMinutesForUser } from "@/app/actions";
 import { requireAuth } from "@/lib/auth";
-import { catchDb } from "@/lib/dbBoundary";
+import { catchAuth, catchDb } from "@/lib/dbBoundary";
 import { prisma } from "@/lib/prisma";
 import { formatMoneyRu, getWeekStart } from "@/lib/utils";
 import { formatWorkedMinutes, getCurrentAppMonth } from "@/lib/workedHours";
 
 export default async function MePage() {
-  const user = await requireAuth();
+  const authResult = await catchAuth(() => requireAuth());
+  if (!authResult.ok) return <ServiceUnavailable scope="me/auth" />;
+  const user = authResult.data;
   const weekStart = getWeekStart();
   const weekEnd = addDays(weekStart, 14);
   const monthLabel = getCurrentAppMonth().label;

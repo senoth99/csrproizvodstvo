@@ -61,19 +61,24 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
     const shifts = shiftsLoaded.data;
     const allowedKeys = new Set(BRIGADES.map((b) => `${b.zoneName}|${b.startTime}|${b.endTime}`));
     const boardShifts = shifts
-      .filter((s) => allowedKeys.has(`${s.zone.name}|${s.startTime}|${s.endTime}`))
+      .filter(
+        (s) =>
+          s.user &&
+          s.zone &&
+          allowedKeys.has(`${s.zone.name}|${s.startTime}|${s.endTime}`)
+      )
       .map((s) => ({
         id: s.id,
         userId: s.userId,
         dayOfWeek: s.dayOfWeek,
-        zoneName: s.zone.name,
+        zoneName: s.zone!.name,
         startTime: s.startTime,
         endTime: s.endTime,
         user: {
-          id: s.user.id,
-          name: s.user.name,
-          color: s.user.color,
-          telegramPhotoUrl: s.user.telegramPhotoUrl ?? null
+          id: s.user!.id,
+          name: s.user!.name,
+          color: s.user!.color,
+          telegramPhotoUrl: s.user!.telegramPhotoUrl ?? null
         }
       }));
     return (

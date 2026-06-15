@@ -1002,22 +1002,32 @@ export async function updateMyShiftReport(input: unknown) {
 
 /** Сумма отработанных минут за текущий календарный месяц (по дате смены, Москва). */
 export async function getMonthlyWorkedMinutesForUser(userId: string): Promise<number> {
-  const { year, month } = getCurrentAppMonth();
-  const reports = await prisma.shiftReport.findMany({
-    where: { userId, workedMinutes: { not: null } },
-    select: { userId: true, workedMinutes: true, shift: { select: { weekStartDate: true, dayOfWeek: true } } }
-  });
-  return groupMonthlyWorkedByUser(reports, year, month).get(userId) ?? 0;
+  try {
+    const { year, month } = getCurrentAppMonth();
+    const reports = await prisma.shiftReport.findMany({
+      where: { userId, workedMinutes: { not: null } },
+      select: { userId: true, workedMinutes: true, shift: { select: { weekStartDate: true, dayOfWeek: true } } }
+    });
+    return groupMonthlyWorkedByUser(reports, year, month).get(userId) ?? 0;
+  } catch (e) {
+    console.error("[getMonthlyWorkedMinutesForUser]", e);
+    return 0;
+  }
 }
 
 /** Карта userId → минуты за текущий месяц (для админки). */
 export async function getMonthlyWorkedMinutesByUser(): Promise<Map<string, number>> {
-  const { year, month } = getCurrentAppMonth();
-  const reports = await prisma.shiftReport.findMany({
-    where: { workedMinutes: { not: null } },
-    select: { userId: true, workedMinutes: true, shift: { select: { weekStartDate: true, dayOfWeek: true } } }
-  });
-  return groupMonthlyWorkedByUser(reports, year, month);
+  try {
+    const { year, month } = getCurrentAppMonth();
+    const reports = await prisma.shiftReport.findMany({
+      where: { workedMinutes: { not: null } },
+      select: { userId: true, workedMinutes: true, shift: { select: { weekStartDate: true, dayOfWeek: true } } }
+    });
+    return groupMonthlyWorkedByUser(reports, year, month);
+  } catch (e) {
+    console.error("[getMonthlyWorkedMinutesByUser]", e);
+    return new Map();
+  }
 }
 
 export async function acceptShiftReportWithAccrual(input: unknown) {
