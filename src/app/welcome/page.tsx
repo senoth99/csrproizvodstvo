@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { AuthDbError, getCurrentUser } from "@/lib/auth";
+import { AuthDbError, getCurrentUser, isProfileReady } from "@/lib/auth";
 import { ServiceUnavailable } from "@/components/ServiceUnavailable";
 import { WelcomeProfileForm } from "@/components/WelcomeProfileForm";
 
@@ -12,7 +12,13 @@ export default async function WelcomePage() {
     throw e;
   }
   if (!user) redirect("/telegram/login");
-  if (user.profileCompleted) redirect("/schedule");
+  if (isProfileReady(user)) redirect("/schedule");
 
-  return <WelcomeProfileForm />;
+  return (
+    <WelcomeProfileForm
+      initialFirstName={user.firstName ?? ""}
+      initialLastName={user.lastName ?? ""}
+      initialPhone={user.phone ?? ""}
+    />
+  );
 }

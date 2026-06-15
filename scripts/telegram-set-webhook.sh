@@ -14,6 +14,9 @@ fi
 : "${APP_URL:?Задайте APP_URL в .env (https://ваш-домен)}"
 : "${TELEGRAM_WEBHOOK_SECRET:?Задайте TELEGRAM_WEBHOOK_SECRET в .env}"
 
+# shellcheck disable=SC1091
+source "$(dirname "$0")/telegram-api.sh"
+
 # Telegram API принимает webhook только по HTTPS (даже если APP_URL в .env с http://).
 WEBHOOK_URL="${APP_URL%/}/api/telegram/webhook"
 if [[ "$WEBHOOK_URL" == http://* ]]; then
@@ -29,15 +32,34 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 echo "--- getMe (проверка токена) ---"
-curl -sS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe" | jq '{ok, username: .result.username, id: .result.id}'
+if ! ME="$(telegram_api_get getMe)"; then
+  telegram_api_unreachable_msg
+  exit 1
+fi
+echo "$ME" | jq '{ok, username: .result.username, id: .result.id}'
+if [[ "$(echo "$ME" | jq -r '.ok // false')" != "true" ]]; then
+  echo "ERROR: getMe вернул ошибку — проверьте TELEGRAM_BOT_TOKEN"
+  exit 1
+fi
 
 echo "--- deleteWebhook (сброс старого URL) ---"
-curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/deleteWebhook" | jq .
+if ! DEL="$(telegram_api_post_json deleteWebhook '{}')"; then
+  telegram_api_unreachable_msg
+  exit 1
+fi
+echo "$DEL" | jq .
 
-curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
-  -H "Content-Type: application/json" \
-  -d "$(jq -n --arg url "$WEBHOOK_URL" --arg secret "$TELEGRAM_WEBHOOK_SECRET" \
-    '{url: $url, secret_token: $secret, allowed_updates: ["message", "callback_query"]}')" | jq .
+SET_JSON="$(jq -n --arg url "$WEBHOOK_URL" --arg secret "$TELEGRAM_WEBHOOK_SECRET" \
+  '{url: $url, secret_token: $secret, allowed_updates: ["message", "callback_query"]}')"
+if ! SET="$(telegram_api_post_json setWebhook "$SET_JSON")"; then
+  telegram_api_unreachable_msg
+  exit 1
+fi
+echo "$SET" | jq .
 
 echo "--- getWebhookInfo ---"
-curl -sS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo" | jq .
+if ! INFO="$(telegram_api_get getWebhookInfo)"; then
+  telegram_api_unreachable_msg
+  exit 1
+fi
+echo "$INFO" | jq .

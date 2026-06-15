@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { buildSessionPayload, hashToken, signSessionToken, SESSION_TTL_SECONDS } from "@/lib/auth";
+import { buildSessionPayload, hashToken, isProfileReady, signSessionToken, SESSION_TTL_SECONDS } from "@/lib/auth";
 import { resolveAppPublicBaseUrl } from "@/lib/appUrl";
 import { prismaUserAccessSessionSelect } from "@/lib/prismaSafeUserInclude";
 import { prisma } from "@/lib/prisma";
@@ -28,7 +28,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ token: str
 
     const accessToken = await prisma.accessToken.findFirst({
       where: { tokenHash },
-      include: { user: { select: prismaUserAccessSessionSelect } }
+      include: { user: { select: { ...prismaUserAccessSessionSelect, phone: true } } }
     });
 
     if (!accessToken || !accessToken.user.isActive) {
@@ -36,7 +36,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ token: str
     }
 
     const jwt = await signSessionToken(buildSessionPayload(accessToken.user));
-    const redirectPath = accessToken.user.profileCompleted ? "/schedule" : "/welcome";
+    const redirectPath = isProfileReady(accessToken.user) ? "/schedule" : "/welcome";
 
     const res = NextResponse.redirect(new URL(redirectPath, appBase));
     res.cookies.set("ps_session", jwt, {

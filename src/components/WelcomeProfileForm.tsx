@@ -4,10 +4,18 @@ import { useState, useTransition } from "react";
 import { completeWelcomeProfile } from "@/app/actions";
 import { AuthScreenShell } from "@/components/AuthScreenShell";
 
-export function WelcomeProfileForm() {
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [phone, setPhone] = useState("");
+export function WelcomeProfileForm({
+  initialFirstName = "",
+  initialLastName = "",
+  initialPhone = ""
+}: {
+  initialFirstName?: string;
+  initialLastName?: string;
+  initialPhone?: string;
+}) {
+  const [firstName, setFirstName] = useState(initialFirstName);
+  const [lastName, setLastName] = useState(initialLastName);
+  const [phone, setPhone] = useState(initialPhone);
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
 

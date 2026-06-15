@@ -13,6 +13,9 @@ fi
 : "${TELEGRAM_BOT_TOKEN:?Задайте TELEGRAM_BOT_TOKEN в .env}"
 : "${APP_URL:?Задайте APP_URL в .env}"
 
+# shellcheck disable=SC1091
+source "$(dirname "$0")/telegram-api.sh"
+
 if ! command -v jq >/dev/null 2>&1; then
   echo "Нужен jq: apt install jq / brew install jq"
   exit 1
@@ -24,7 +27,10 @@ if [[ "$WEBHOOK_URL" == http://* ]]; then
 fi
 
 echo "=== getMe ==="
-ME="$(curl -sS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe")"
+if ! ME="$(telegram_api_get getMe)"; then
+  telegram_api_unreachable_msg
+  exit 1
+fi
 echo "$ME" | jq .
 BOT_USER="$(echo "$ME" | jq -r '.result.username // empty')"
 if [[ -z "$BOT_USER" ]]; then
@@ -41,7 +47,10 @@ fi
 
 echo ""
 echo "=== getWebhookInfo ==="
-WH="$(curl -sS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo")"
+if ! WH="$(telegram_api_get getWebhookInfo)"; then
+  telegram_api_unreachable_msg
+  exit 1
+fi
 echo "$WH" | jq .
 
 WH_URL="$(echo "$WH" | jq -r '.result.url // empty')"
@@ -72,7 +81,7 @@ fi
 echo ""
 echo "=== probe webhook (локально) ==="
 if command -v curl >/dev/null 2>&1; then
-  HTTP_CODE="$(curl -sS -o /dev/null -w "%{http_code}" -X POST "$WEBHOOK_URL" \
+  HTTP_CODE="$(curl -sS -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 20 -X POST "$WEBHOOK_URL" \
     -H "Content-Type: application/json" \
     -H "X-Telegram-Bot-Api-Secret-Token: ${TELEGRAM_WEBHOOK_SECRET}" \
     -d '{"message":{"message_id":1,"chat":{"id":1},"from":{"id":1,"username":"diag"},"text":"/start diag"}}' || echo "000")"

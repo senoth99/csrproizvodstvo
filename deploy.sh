@@ -40,12 +40,17 @@ set -a
 # shellcheck disable=SC1091
 source .env
 set +a
-if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
+if [[ -n "${TELEGRAM_BOT_TOKEN:-}" && "${SKIP_TELEGRAM_WEBHOOK:-}" != "1" ]]; then
   if command -v jq >/dev/null 2>&1; then
     echo "==> Telegram webhook"
-    bash scripts/telegram-set-webhook.sh
-    echo "==> Telegram diagnose"
-    bash scripts/telegram-diagnose.sh
+    if bash scripts/telegram-set-webhook.sh; then
+      echo "==> Telegram diagnose"
+      bash scripts/telegram-diagnose.sh || echo "WARN: диагностика Telegram не прошла — приложение уже перезапущено."
+    else
+      echo "WARN: webhook Telegram не настроен (api.telegram.org недоступен с сервера или ошибка токена)."
+      echo "       Деплой приложения завершён. Позже: ./scripts/telegram-set-webhook.sh"
+      echo "       Или SKIP_TELEGRAM_WEBHOOK=1 в .env и HTTPS_PROXY для обхода блокировки."
+    fi
   else
     echo "WARN: jq не установлен — выполните: ./scripts/telegram-set-webhook.sh && ./scripts/telegram-diagnose.sh"
   fi

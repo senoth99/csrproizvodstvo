@@ -3,6 +3,11 @@ type TelegramApiErr = { ok: false; description?: string };
 
 let cachedBotUsername: { value: string; at: number } | null = null;
 const CACHE_MS = 5 * 60 * 1000;
+const TELEGRAM_FETCH_TIMEOUT_MS = 15_000;
+
+async function telegramApiFetch(url: string): Promise<Response> {
+  return fetch(url, { next: { revalidate: 0 }, signal: AbortSignal.timeout(TELEGRAM_FETCH_TIMEOUT_MS) });
+}
 
 export async function fetchTelegramBotUsername(): Promise<string | null> {
   const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
@@ -13,7 +18,7 @@ export async function fetchTelegramBotUsername(): Promise<string | null> {
   }
 
   try {
-    const res = await fetch(`https://api.telegram.org/bot${token}/getMe`, { next: { revalidate: 0 } });
+    const res = await telegramApiFetch(`https://api.telegram.org/bot${token}/getMe`);
     const data = (await res.json()) as TelegramApiOk<{ username?: string }> | TelegramApiErr;
     if (!data.ok || !data.result?.username) return null;
     const username = data.result.username.toLowerCase();
@@ -39,7 +44,7 @@ export async function fetchTelegramWebhookInfo(): Promise<TelegramWebhookInfo | 
   const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
   if (!token) return null;
   try {
-    const res = await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`);
+    const res = await telegramApiFetch(`https://api.telegram.org/bot${token}/getWebhookInfo`);
     const data = (await res.json()) as TelegramApiOk<TelegramWebhookInfo> | TelegramApiErr;
     if (!data.ok) return null;
     return data.result;

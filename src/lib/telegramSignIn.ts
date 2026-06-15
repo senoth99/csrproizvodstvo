@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma, normalizeDatabaseUrlEnv } from "@/lib/prisma";
 import { UserRole, type UserRole as UserRoleValue } from "@/lib/enums";
 import { ACCESS_DENIED_CODE } from "@/lib/accessDenied";
-import { buildSessionPayload, signSessionToken, SESSION_TTL_SECONDS } from "@/lib/auth";
+import { buildSessionPayload, isProfileReady, signSessionToken, SESSION_TTL_SECONDS } from "@/lib/auth";
 import { sessionCookieSecure } from "@/lib/sessionCookie";
 
 /** Mini App payload from initData JSON */
@@ -160,7 +160,7 @@ export async function createSessionResponseFromTgUser(
     const res = NextResponse.json({
       ok: true,
       role: user.role,
-      onboardingRequired: !user.profileCompleted
+      onboardingRequired: !isProfileReady(user)
     });
     res.cookies.set("ps_session", jwt, {
       httpOnly: true,
