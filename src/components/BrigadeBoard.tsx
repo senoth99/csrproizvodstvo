@@ -1,12 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
-import { Boxes, ChevronDown, Cpu, Flame, Scissors, Shirt, X } from "lucide-react";
+import { Boxes, ChevronDown, Cpu, Flame, Loader2, Scissors, Shirt, X } from "lucide-react";
 import { managerAssignBrigadeShift, managerRemoveShift, toggleBrigadeAssignment } from "@/app/actions";
 import { BrigadeModeTabs } from "@/components/BrigadeModeTabs";
 import { UserAvatar } from "@/components/UserAvatar";
 import type { BrigadeConfig, BrigadeShiftLabel } from "@/lib/brigades";
+import {
+  applyManagerAssignResult,
+  applyManagerRemoveResult,
+  applyToggleBrigadeResult,
+  type BrigadeBoardShift
+} from "@/lib/brigadeAssignment";
 import { formatDateRu, isBeforeAppDay, isSameAppDay, isoFromWeekDay, safeParseISO, weekDays } from "@/lib/utils";
 
 export type BrigadeAssignableEmployee = {
@@ -16,15 +21,9 @@ export type BrigadeAssignableEmployee = {
   telegramPhotoUrl: string | null;
 };
 
-type ShiftWithUser = {
-  id: string;
-  userId: string;
-  dayOfWeek: number;
-  zoneName: string;
-  startTime: string;
-  endTime: string;
-  user: { id: string; name: string; color: string; telegramPhotoUrl?: string | null };
-};
+type ShiftWithUser = BrigadeBoardShift;
+
+const cellBusyId = (brigadeId: string, dayOfWeek: number) => `${brigadeId}:${dayOfWeek}`;
 
 type PickCtx = {
   brigadeId: string;
@@ -64,14 +63,19 @@ export function BrigadeBoard({
   canManageSchedule?: boolean;
   assignableEmployees?: BrigadeAssignableEmployee[];
 }) {
-  const [pending, start] = useTransition();
-  const router = useRouter();
+  const [sheetPending, startSheet] = useTransition();
+  const [localShifts, setLocalShifts] = useState(shifts);
+  const [busyCell, setBusyCell] = useState<string | null>(null);
   const [mode, setMode] = useState<BrigadeShiftLabel>("День");
   const [openBrigadeId, setOpenBrigadeId] = useState<string | null>(null);
   const [boardError, setBoardError] = useState("");
   const [pickCtx, setPickCtx] = useState<PickCtx | null>(null);
   const [removeShift, setRemoveShift] = useState<ShiftWithUser | null>(null);
   const [sheetError, setSheetError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLocalShifts(shifts);
+  }, [shifts]);
 
   useEffect(() => {
     if (pickCtx) setSheetError(null);
@@ -91,7 +95,7 @@ export function BrigadeBoard({
     "dd.MM"
   )}`;
   const grouped = new Map<string, ShiftWithUser[]>();
-  for (const s of shifts) {
+  for (const s of localShifts) {
     const key = cellKey(s.zoneName, s.startTime, s.endTime, s.dayOfWeek);
     const list = grouped.get(key) ?? [];
     list.push(s);
@@ -106,18 +110,18 @@ export function BrigadeBoard({
   }, [pickCtx, assignableEmployees]);
 
   const runAssign = (userId: string) => {
-    if (!pickCtx || pending) return;
-    start(async () => {
+    if (!pickCtx || sheetPending) return;
+    startSheet(async () => {
       try {
         setSheetError(null);
-        await managerAssignBrigadeShift({
+        const result = await managerAssignBrigadeShift({
           brigadeId: pickCtx.brigadeId,
           dayOfWeek: pickCtx.dayOfWeek,
           weekStartDate: weekStartDateIso,
           userId
         });
+        setLocalShifts((prev) => applyManagerAssignResult(prev, result));
         setPickCtx(null);
-        router.refresh();
       } catch (e) {
         setSheetError(e instanceof Error ? e.message : "Не удалось назначить");
       }
@@ -125,17 +129,36 @@ export function BrigadeBoard({
   };
 
   const runRemove = () => {
-    if (!removeShift || pending) return;
-    start(async () => {
+    if (!removeShift || sheetPending) return;
+    startSheet(async () => {
       try {
         setSheetError(null);
-        await managerRemoveShift(removeShift.id);
+        const result = await managerRemoveShift(removeShift.id);
+        setLocalShifts((prev) => applyManagerRemoveResult(prev, result));
         setRemoveShift(null);
-        router.refresh();
       } catch (e) {
         setSheetError(e instanceof Error ? e.message : "Не удалось снять смену");
       }
     });
+  };
+
+  const runSelfToggle = async (brigadeId: string, dayOfWeek: number) => {
+    const busyId = cellBusyId(brigadeId, dayOfWeek);
+    if (busyCell) return;
+    setBusyCell(busyId);
+    setBoardError("");
+    try {
+      const result = await toggleBrigadeAssignment({
+        brigadeId,
+        dayOfWeek,
+        weekStartDate: weekStartDateIso
+      });
+      setLocalShifts((prev) => applyToggleBrigadeResult(prev, result));
+    } catch (e) {
+      setBoardError(e instanceof Error ? e.message : "Не удалось записаться на смену");
+    } finally {
+      setBusyCell(null);
+    }
   };
 
   return (
@@ -160,7 +183,7 @@ export function BrigadeBoard({
           return cellShifts.some((s) => s.userId === currentUserId);
         });
         return (
-          <section key={brigade.id} className="card relative transition-all duration-300 ease-out">
+          <section key={brigade.id} className="card relative transition-all duration-150 ease-out">
             {hasMyShiftInBrigade ? (
               <span
                 className={`absolute left-3 top-3 h-[5px] w-[5px] rounded-full ${
@@ -193,7 +216,7 @@ export function BrigadeBoard({
             </button>
 
             <div
-              className={`grid transition-all duration-300 ease-out ${
+              className={`grid transition-all duration-150 ease-out ${
                 isOpen
                   ? "mt-3 grid-rows-[1fr] opacity-100"
                   : "pointer-events-none grid-rows-[0fr] opacity-0"
@@ -221,7 +244,9 @@ export function BrigadeBoard({
                     const isToday = isSameAppDay(dayDate, new Date());
                     const isEmployeeTodayLocked =
                       !canManageSchedule && weekMode === "current" && isToday;
-                    const isCellDisabled = pending || isPastDay || isEmployeeTodayLocked;
+                    const thisBusyId = cellBusyId(brigade.id, d.index);
+                    const isThisBusy = busyCell === thisBusyId;
+                    const isCellDisabled = isPastDay || isEmployeeTodayLocked;
 
                     const openPicker = () => {
                       if (isCellDisabled) return;
@@ -241,6 +266,9 @@ export function BrigadeBoard({
                         <div className="mb-1 flex items-center justify-between text-xs">
                           <span className="font-semibold text-muted">{d.name}</span>
                           <div className="flex items-center gap-2">
+                            {isThisBusy ? (
+                              <Loader2 size={12} className="animate-spin text-muted" aria-hidden />
+                            ) : null}
                             {isPastDay ? <span className="text-[10px] text-muted">Недоступно</span> : null}
                             {isEmployeeTodayLocked ? (
                               <span className="text-[10px] text-muted">Запись закрыта</span>
@@ -264,10 +292,10 @@ export function BrigadeBoard({
                                   key={s.id}
                                   type="button"
                                   data-shift-chip="1"
-                                  disabled={pending || isPastDay || isEmployeeTodayLocked}
+                                  disabled={sheetPending || isPastDay || isEmployeeTodayLocked}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    if (isPastDay || isEmployeeTodayLocked || pending) return;
+                                    if (isPastDay || isEmployeeTodayLocked || sheetPending) return;
                                     setRemoveShift(s);
                                   }}
                                   className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-1 text-left text-[10px] transition-all duration-200 ease-out ${
@@ -340,24 +368,8 @@ export function BrigadeBoard({
                       <button
                         key={`${brigade.id}-${d.index}`}
                         type="button"
-                        disabled={isCellDisabled}
-                        onClick={() =>
-                          start(async () => {
-                            try {
-                              setBoardError("");
-                              await toggleBrigadeAssignment({
-                                brigadeId: brigade.id,
-                                dayOfWeek: d.index,
-                                weekStartDate: weekStartDateIso
-                              });
-                              router.refresh();
-                            } catch (e) {
-                              setBoardError(
-                                e instanceof Error ? e.message : "Не удалось записаться на смену"
-                              );
-                            }
-                          })
-                        }
+                        disabled={isCellDisabled || isThisBusy}
+                        onClick={() => void runSelfToggle(brigade.id, d.index)}
                         className={`w-full rounded-xl border p-2 text-left transition-all duration-200 ease-out ${
                           isCellDisabled
                             ? "cursor-not-allowed border-border bg-muted/[0.04] opacity-55"
@@ -437,7 +449,7 @@ export function BrigadeBoard({
                     <li key={u.id}>
                       <button
                         type="button"
-                        disabled={pending}
+                        disabled={sheetPending}
                         onClick={() => runAssign(u.id)}
                         className="flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left transition-all hover:border-border hover:bg-surface disabled:opacity-50"
                       >
@@ -490,7 +502,7 @@ export function BrigadeBoard({
             <div className="flex gap-2 border-t border-border/80 px-4 py-4">
               <button
                 type="button"
-                disabled={pending}
+                disabled={sheetPending}
                 onClick={() => setRemoveShift(null)}
                 className="btn-secondary flex-1 py-2.5 text-sm disabled:opacity-50"
               >
@@ -498,11 +510,11 @@ export function BrigadeBoard({
               </button>
               <button
                 type="button"
-                disabled={pending}
+                disabled={sheetPending}
                 onClick={runRemove}
                 className="btn-primary flex-1 py-2.5 text-sm disabled:opacity-50"
               >
-                {pending ? "…" : "Снять"}
+                {sheetPending ? "…" : "Снять"}
               </button>
             </div>
             {sheetError ? (

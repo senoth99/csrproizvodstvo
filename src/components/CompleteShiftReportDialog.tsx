@@ -12,6 +12,8 @@ import { cn } from "@/lib/utils";
 
 type ChecklistItem = { id: string; label: string };
 
+type ReportStep = "report" | "like";
+
 type CoworkerOption = {
   id: string;
   name: string;
@@ -46,6 +48,7 @@ export function CompleteShiftReportDialog({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [step, setStep] = useState<ReportStep>("report");
   const [text, setText] = useState("");
   const [workStartTime, setWorkStartTime] = useState(defaultStartTime);
   const [workEndTime, setWorkEndTime] = useState(defaultEndTime);
@@ -122,6 +125,7 @@ export function CompleteShiftReportDialog({
 
   const close = () => {
     setOpen(false);
+    setStep("report");
     setError("");
     setText("");
     setWorkStartTime(defaultStartTime);
@@ -129,6 +133,61 @@ export function CompleteShiftReportDialog({
     setLikedUserId(null);
     setChecklistChecked({});
     resetPhoto();
+  };
+
+  const validateReportFields = () => {
+    if (text.trim().length < 5) {
+      setError("Напишите чуть подробнее — минимум 5 символов.");
+      return false;
+    }
+    if (!workStartTime || !workEndTime) {
+      setError("Укажите время начала и окончания работы.");
+      return false;
+    }
+    if (!workplacePhotoPath) {
+      setError("Добавьте фото рабочего места перед отправкой.");
+      return false;
+    }
+    return true;
+  };
+
+  const submitReport = (likeId: string | null) => {
+    start(async () => {
+      try {
+        await submitShiftReport({
+          shiftId,
+          text,
+          workplacePhotoPath,
+          workStartTime,
+          workEndTime,
+          ...(likeId ? { likedUserId: likeId } : {}),
+          checklistAnswers: checklistItems.map((item) => ({
+            itemId: item.id,
+            checked: Boolean(checklistChecked[item.id])
+          }))
+        });
+        close();
+        router.refresh();
+      } catch (err) {
+        setError(formatShiftReportSubmitError(err));
+      }
+    });
+  };
+
+  const goToLikeStep = () => {
+    setError("");
+    if (!validateReportFields()) return;
+    setLikedUserId(null);
+    setStep("like");
+  };
+
+  const handleReportStepPrimary = () => {
+    if (!validateReportFields()) return;
+    if (coworkersLoading || coworkers.length > 0) {
+      goToLikeStep();
+      return;
+    }
+    submitReport(null);
   };
 
   const workedPreview = (() => {
@@ -204,47 +263,27 @@ export function CompleteShiftReportDialog({
             >
               <div className="border-b border-border/80 px-4 py-4">
                 <p id="shift-report-title" className="text-base font-medium tracking-tight">
-                  Отчёт по смене
+                  {step === "like" ? "Отметить коллегу" : "Отчёт по смене"}
                 </p>
-                <p className="mt-1 text-sm text-muted">{headline}</p>
+                <p className="mt-1 text-sm text-muted">
+                  {step === "like"
+                    ? "Можно выбрать одного человека или пропустить. Лайк анонимный."
+                    : headline}
+                </p>
+                {step === "report" && (coworkersLoading || coworkers.length > 0) ? (
+                  <p className="mt-2 text-[10px] font-bold uppercase tracking-display text-muted">Шаг 1 из 2</p>
+                ) : null}
+                {step === "like" ? (
+                  <p className="mt-2 text-[10px] font-bold uppercase tracking-display text-muted">Шаг 2 из 2</p>
+                ) : null}
               </div>
+
+              {step === "report" ? (
               <form
                 className="space-y-4 px-4 py-4"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  setError("");
-                  if (text.trim().length < 5) {
-                    setError("Напишите чуть подробнее — минимум 5 символов.");
-                    return;
-                  }
-                  if (!workStartTime || !workEndTime) {
-                    setError("Укажите время начала и окончания работы.");
-                    return;
-                  }
-                  if (!workplacePhotoPath) {
-                    setError("Добавьте фото рабочего места перед отправкой.");
-                    return;
-                  }
-                  start(async () => {
-                    try {
-                      await submitShiftReport({
-                        shiftId,
-                        text,
-                        workplacePhotoPath,
-                        workStartTime,
-                        workEndTime,
-                        ...(likedUserId ? { likedUserId } : {}),
-                        checklistAnswers: checklistItems.map((item) => ({
-                          itemId: item.id,
-                          checked: Boolean(checklistChecked[item.id])
-                        }))
-                      });
-                      close();
-                      router.refresh();
-                    } catch (err) {
-                      setError(formatShiftReportSubmitError(err));
-                    }
-                  });
+                  handleReportStepPrimary();
                 }}
               >
                 <div className="grid grid-cols-2 gap-3">
@@ -399,20 +438,36 @@ export function CompleteShiftReportDialog({
                   </div>
                 ) : null}
 
+                {error ? <p className="text-sm font-medium text-foreground/85">{error}</p> : null}
+
+                <div className="grid w-full grid-cols-2 gap-3 pt-1 [grid-template-columns:repeat(2,minmax(0,1fr))]">
+                  <button type="button" className="btn-secondary w-full" disabled={pending || photoUploading} onClick={close}>
+                    Отменить
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-primary w-full"
+                    disabled={pending || photoUploading || !workplacePhotoPath}
+                  >
+                    {pending
+                      ? "Отправляем…"
+                      : coworkersLoading || coworkers.length > 0
+                        ? "Далее"
+                        : "Завершить"}
+                  </button>
+                </div>
+              </form>
+              ) : (
+              <div className="space-y-4 px-4 py-4">
                 {coworkersLoading ? (
-                  <p className="text-sm text-muted">Загружаем коллег на смене…</p>
+                  <p className="py-8 text-center text-sm text-muted">Загружаем коллег на смене…</p>
                 ) : coworkers.length > 0 ? (
-                  <div className="space-y-2.5 rounded-lg border border-border/80 bg-foreground/[0.02] px-3 py-3">
+                  <div className="space-y-3 rounded-lg border border-border/80 bg-foreground/[0.02] px-3 py-4">
                     <div className="flex items-start gap-2">
-                      <Heart className="mt-0.5 h-4 w-4 shrink-0 text-highlight" aria-hidden />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-foreground">Отметить коллегу</p>
-                        <p className="mt-0.5 text-[11px] leading-snug text-muted">
-                          Можно выбрать одного человека. Лайк анонимный — коллега не узнает, кто поставил.
-                        </p>
-                      </div>
+                      <Heart className="mt-0.5 h-5 w-5 shrink-0 text-highlight" aria-hidden />
+                      <p className="text-sm text-muted">Кого отметить за хорошую работу на смене?</p>
                     </div>
-                    <ul className="flex flex-wrap gap-2">
+                    <ul className="flex flex-col gap-2">
                       {coworkers.map((coworker) => {
                         const selected = likedUserId === coworker.id;
                         return (
@@ -426,42 +481,54 @@ export function CompleteShiftReportDialog({
                                 setError("");
                               }}
                               className={cn(
-                                "inline-flex max-w-full items-center gap-2 rounded-full border px-2.5 py-1.5 pr-3 text-left transition-colors",
+                                "flex w-full items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors",
                                 selected
                                   ? "border-highlight/50 bg-highlight/15"
-                                  : "border-foreground/15 bg-foreground/[0.06] hover:bg-foreground/[0.1]"
+                                  : "border-border/70 bg-background/60 hover:bg-foreground/[0.04]"
                               )}
                             >
                               <UserAvatar
                                 name={coworker.name}
                                 photoUrl={coworker.telegramPhotoUrl}
                                 color={coworker.color}
-                                size="sm"
+                                size="md"
                               />
-                              <span className="truncate text-xs font-semibold">{coworker.name}</span>
+                              <span className="min-w-0 flex-1 font-semibold">{coworker.name}</span>
                             </button>
                           </li>
                         );
                       })}
                     </ul>
                   </div>
-                ) : null}
+                ) : (
+                  <p className="py-6 text-center text-sm text-muted">На этой смене нет других сотрудников.</p>
+                )}
 
                 {error ? <p className="text-sm font-medium text-foreground/85">{error}</p> : null}
 
                 <div className="grid w-full grid-cols-2 gap-3 pt-1 [grid-template-columns:repeat(2,minmax(0,1fr))]">
-                  <button type="button" className="btn-secondary w-full" disabled={pending || photoUploading} onClick={close}>
-                    Отменить
+                  <button
+                    type="button"
+                    className="btn-secondary w-full"
+                    disabled={pending}
+                    onClick={() => {
+                      setError("");
+                      setStep("report");
+                    }}
+                  >
+                    Назад
                   </button>
                   <button
-                    type="submit"
+                    type="button"
                     className="btn-primary w-full"
-                    disabled={pending || photoUploading || !workplacePhotoPath}
+                    disabled={pending || coworkersLoading}
+                    onClick={() => submitReport(likedUserId)}
                   >
-                    {pending ? "Отправляем…" : "Завершить"}
+                    {pending ? "Отправляем…" : likedUserId ? "Отправить" : "Пропустить"}
                   </button>
                 </div>
-              </form>
+              </div>
+              )}
             </div>
           </div>,
           document.body

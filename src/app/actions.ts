@@ -42,6 +42,12 @@ import {
   resolveReportPhotoDiskPath
 } from "@/lib/workplaceReportPhoto";
 import { computeWorkedMinutes, getCurrentAppMonth, groupMonthlyWorkedByUser } from "@/lib/workedHours";
+import type {
+  BrigadeBoardShift,
+  ManagerAssignBrigadeResult,
+  ManagerRemoveShiftResult,
+  ToggleBrigadeAssignmentResult
+} from "@/lib/brigadeAssignment";
 import { z } from "zod";
 
 function normalizedTelegramSuperAdminUsername(): string {
@@ -191,19 +197,27 @@ async function assertZoneLimit(
   if (count >= max && !allowOverride) throw new Error("Лимит сотрудников по зоне и времени превышен.");
 }
 
+let brigadeZonesCache: Map<string, { id: string }> | null = null;
+
 async function ensureBrigadeZones() {
-  const zoneByName = new Map<string, { id: string }>();
+  if (brigadeZonesCache) return brigadeZonesCache;
+
+  const names = [...new Set(BRIGADES.map((b) => b.zoneName))];
+  const existing = await prisma.zone.findMany({
+    where: { name: { in: names } },
+    select: { id: true, name: true }
+  });
+  const zoneByName = new Map(existing.map((z) => [z.name, { id: z.id }]));
+
   for (const [idx, brigade] of BRIGADES.entries()) {
-    const existing = await prisma.zone.findFirst({ where: { name: brigade.zoneName } });
-    if (existing) {
-      zoneByName.set(brigade.zoneName, { id: existing.id });
-      continue;
-    }
+    if (zoneByName.has(brigade.zoneName)) continue;
     const created = await prisma.zone.create({
       data: { name: brigade.zoneName, sortOrder: idx + 1, isActive: true }
     });
     zoneByName.set(brigade.zoneName, { id: created.id });
   }
+
+  brigadeZonesCache = zoneByName;
   return zoneByName;
 }
 
@@ -268,6 +282,7 @@ export async function createZone(input: unknown) {
   const actor = await requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]);
   const data = zoneSchema.parse(input);
   const zone = await prisma.zone.create({ data });
+  brigadeZonesCache = null;
   await writeAuditLog({ actorUserId: actor.id, action: "CREATE_ZONE", entityType: "Zone", entityId: zone.id, payload: data });
   revalidatePath("/admin/zones");
 }
@@ -322,7 +337,11 @@ export async function createShift(input: unknown, forceOverride = false) {
   revalidatePath("/me");
 }
 
-export async function toggleBrigadeAssignment(input: { brigadeId: string; dayOfWeek: number; weekStartDate: string }) {
+export async function toggleBrigadeAssignment(input: {
+  brigadeId: string;
+  dayOfWeek: number;
+  weekStartDate: string;
+}): Promise<ToggleBrigadeAssignmentResult> {
   const actor = await requireAuth();
   const brigade = BRIGADES.find((b) => b.id === input.brigadeId);
   if (!brigade) throw new Error("Бригада не найдена");
@@ -366,7 +385,7 @@ export async function toggleBrigadeAssignment(input: { brigadeId: string; dayOfW
     });
     revalidatePath("/schedule");
     revalidatePath("/me");
-    return;
+    return { kind: "removed", shiftId: existingSameCell.id };
   }
 
   const shiftsReplaced = await prisma.shift.findMany({
@@ -434,10 +453,29 @@ export async function toggleBrigadeAssignment(input: { brigadeId: string; dayOfW
   }
   revalidatePath("/schedule");
   revalidatePath("/me");
+  const boardShift: BrigadeBoardShift = {
+    id: shift.id,
+    userId: actor.id,
+    dayOfWeek,
+    zoneName: brigade.zoneName,
+    startTime: brigade.startTime,
+    endTime: brigade.endTime,
+    user: {
+      id: actor.id,
+      name: actor.name,
+      color: actor.color,
+      telegramPhotoUrl: actor.telegramPhotoUrl ?? null
+    }
+  };
+  return {
+    kind: "added",
+    shift: boardShift,
+    removedShiftIds: shiftsReplaced.map((s) => s.id)
+  };
 }
 
 /** Назначение смены сотруднику с графика: суперадмин или руководитель (флаг isManager). */
-export async function managerAssignBrigadeShift(input: unknown) {
+export async function managerAssignBrigadeShift(input: unknown): Promise<ManagerAssignBrigadeResult> {
   const actor = await requireAuth();
   if (!canOpenManagerPanel(actor)) throw new Error("Недостаточно прав.");
   const data = managerBrigadeAssignSchema.parse(input);
@@ -448,7 +486,10 @@ export async function managerAssignBrigadeShift(input: unknown) {
   const zone = zones.get(brigade.zoneName);
   if (!zone) throw new Error("Зона не найдена");
 
-  const target = await prisma.user.findUnique({ where: { id: data.userId } });
+  const target = await prisma.user.findUnique({
+    where: { id: data.userId },
+    select: { id: true, name: true, color: true, telegramPhotoUrl: true, isActive: true }
+  });
   if (!target?.isActive) throw new Error("Пользователь не найден или не активен.");
 
   const existingSameCell = await prisma.shift.findFirst({
@@ -462,7 +503,7 @@ export async function managerAssignBrigadeShift(input: unknown) {
       status: { not: ShiftStatus.CANCELLED }
     }
   });
-  if (existingSameCell) return;
+  if (existingSameCell) return { kind: "noop" };
 
   const start = toDateTime(weekStartDate, data.dayOfWeek, brigade.startTime);
   const end = endAt(start, brigade.startTime, brigade.endTime);
@@ -567,9 +608,27 @@ export async function managerAssignBrigadeShift(input: unknown) {
   revalidatePath("/schedule");
   revalidatePath("/me");
   revalidatePath("/");
+  return {
+    kind: "assigned",
+    shift: {
+      id: shift.id,
+      userId: target.id,
+      dayOfWeek: data.dayOfWeek,
+      zoneName: brigade.zoneName,
+      startTime: brigade.startTime,
+      endTime: brigade.endTime,
+      user: {
+        id: target.id,
+        name: target.name,
+        color: target.color,
+        telegramPhotoUrl: target.telegramPhotoUrl ?? null
+      }
+    },
+    removedShiftIds: shiftsReplaced.map((s) => s.id)
+  };
 }
 
-export async function managerRemoveShift(shiftId: string) {
+export async function managerRemoveShift(shiftId: string): Promise<ManagerRemoveShiftResult> {
   const actor = await requireAuth();
   if (!canOpenManagerPanel(actor)) throw new Error("Недостаточно прав.");
   const shift = await prisma.shift.findUnique({
@@ -577,7 +636,7 @@ export async function managerRemoveShift(shiftId: string) {
     include: { zone: true, user: { select: { id: true, name: true } } }
   });
   if (!shift) throw new Error("Смена не найдена.");
-  if (shift.status === ShiftStatus.CANCELLED) return;
+  if (shift.status === ShiftStatus.CANCELLED) return { kind: "noop" };
 
   const brief = describeShiftBrief(shift);
   const targetName = shift.user.name;
@@ -625,6 +684,7 @@ export async function managerRemoveShift(shiftId: string) {
   revalidatePath("/schedule");
   revalidatePath("/me");
   revalidatePath("/");
+  return { kind: "removed", shiftId };
 }
 
 export async function updateEmployeeNdaSigned(input: unknown) {
