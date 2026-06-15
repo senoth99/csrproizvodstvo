@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 import { Pencil } from "lucide-react";
 import { updateMyProfile } from "@/app/actions";
 import { UserAvatar } from "@/components/UserAvatar";
+import { formatPhoneDisplay } from "@/lib/formatPhone";
 
 export function MeProfileCard({
   displayName,
@@ -12,7 +13,8 @@ export function MeProfileCard({
   telegramPhotoUrl,
   accentColor,
   initialFirstName,
-  initialLastName
+  initialLastName,
+  initialPhone
 }: {
   displayName: string;
   telegramUsername: string;
@@ -20,14 +22,18 @@ export function MeProfileCard({
   accentColor: string;
   initialFirstName: string;
   initialLastName: string;
+  initialPhone: string;
 }) {
   const router = useRouter();
-  const hasRealName = Boolean(initialFirstName.trim() && initialLastName.trim());
+  const hasCompleteProfile = Boolean(
+    initialFirstName.trim() && initialLastName.trim() && initialPhone.trim()
+  );
   const [firstName, setFirstName] = useState(initialFirstName);
   const [lastName, setLastName] = useState(initialLastName);
+  const [phone, setPhone] = useState(initialPhone);
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
-  const [editing, setEditing] = useState(!hasRealName);
+  const [editing, setEditing] = useState(!hasCompleteProfile);
   const [pending, start] = useTransition();
 
   return (
@@ -43,18 +49,22 @@ export function MeProfileCard({
               <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.08em] text-muted leading-none">
                 @{telegramUsername}
               </p>
+              {!editing && initialPhone.trim() ? (
+                <p className="mt-2 text-sm tabular-nums text-foreground/90">{formatPhoneDisplay(initialPhone)}</p>
+              ) : null}
             </div>
-            {hasRealName ? (
+            {hasCompleteProfile ? (
               <button
                 type="button"
                 className="inline-flex h-10 w-10 shrink-0 touch-manipulation items-center justify-center rounded-lg border border-border bg-transparent text-muted transition hover:bg-foreground/[0.07] hover:text-foreground"
-                aria-label={editing ? "Закрыть редактирование имени" : "Изменить фамилию и имя"}
+                aria-label={editing ? "Закрыть редактирование профиля" : "Изменить профиль"}
                 aria-expanded={editing}
                 disabled={pending}
                 onClick={() => {
                   if (editing) {
                     setFirstName(initialFirstName);
                     setLastName(initialLastName);
+                    setPhone(initialPhone);
                   }
                   setOk("");
                   setError("");
@@ -77,7 +87,7 @@ export function MeProfileCard({
                 setOk("");
                 start(async () => {
                   try {
-                    await updateMyProfile({ firstName, lastName });
+                    await updateMyProfile({ firstName, lastName, phone });
                     setOk("Сохранено");
                     setEditing(false);
                     router.refresh();
@@ -87,7 +97,7 @@ export function MeProfileCard({
                 });
               }}
             >
-              <p className="text-xs font-medium text-muted">Как в паспорте</p>
+              <p className="text-xs font-medium text-muted">Как в паспорте и контактный телефон</p>
               <div className="grid gap-2 sm:grid-cols-2">
                 <input
                   value={lastName}
@@ -104,11 +114,22 @@ export function MeProfileCard({
                   disabled={pending}
                 />
               </div>
+              <input
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="Телефон +7..."
+                autoComplete="tel"
+                inputMode="tel"
+                disabled={pending}
+              />
               <div className="flex flex-wrap items-center gap-2">
-                <button className="btn-primary" disabled={pending || !firstName.trim() || !lastName.trim()}>
+                <button
+                  className="btn-primary"
+                  disabled={pending || !firstName.trim() || !lastName.trim() || !phone.trim()}
+                >
                   {pending ? "Сохраняем…" : "Сохранить"}
                 </button>
-                {hasRealName ? (
+                {hasCompleteProfile ? (
                   <button
                     type="button"
                     className="btn-secondary"
@@ -116,6 +137,7 @@ export function MeProfileCard({
                     onClick={() => {
                       setFirstName(initialFirstName);
                       setLastName(initialLastName);
+                      setPhone(initialPhone);
                       setEditing(false);
                       setOk("");
                       setError("");

@@ -3,10 +3,21 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
-import { Camera, ClipboardCheck, ImagePlus } from "lucide-react";
-import { submitShiftReport } from "@/app/actions";
+import { Camera, ClipboardCheck, ClipboardList, Heart, ImagePlus } from "lucide-react";
+import { getShiftChecklistForReport, getShiftCoworkersForLike, submitShiftReport } from "@/app/actions";
+import { UserAvatar } from "@/components/UserAvatar";
 import { compressImageFile } from "@/lib/clientImageCompress";
 import { computeWorkedMinutes, formatWorkedMinutes } from "@/lib/workedHours";
+import { cn } from "@/lib/utils";
+
+type ChecklistItem = { id: string; label: string };
+
+type CoworkerOption = {
+  id: string;
+  name: string;
+  color: string;
+  telegramPhotoUrl: string | null;
+};
 
 function formatShiftReportSubmitError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
@@ -39,6 +50,12 @@ export function CompleteShiftReportDialog({
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState("");
   const [photoUploading, setPhotoUploading] = useState(false);
   const [error, setError] = useState("");
+  const [likedUserId, setLikedUserId] = useState<string | null>(null);
+  const [coworkers, setCoworkers] = useState<CoworkerOption[]>([]);
+  const [coworkersLoading, setCoworkersLoading] = useState(false);
+  const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
+  const [checklistChecked, setChecklistChecked] = useState<Record<string, boolean>>({});
+  const [checklistLoading, setChecklistLoading] = useState(false);
   const [pending, start] = useTransition();
   const [mounted, setMounted] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -47,6 +64,43 @@ export function CompleteShiftReportDialog({
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setCoworkersLoading(true);
+    setChecklistLoading(true);
+    setCoworkers([]);
+    setChecklistItems([]);
+    setChecklistChecked({});
+    setLikedUserId(null);
+    void (async () => {
+      try {
+        const [list, checklist] = await Promise.all([
+          getShiftCoworkersForLike(shiftId),
+          getShiftChecklistForReport(shiftId)
+        ]);
+        if (!cancelled) {
+          setCoworkers(list);
+          setChecklistItems(checklist);
+          setChecklistChecked(Object.fromEntries(checklist.map((item) => [item.id, false])));
+        }
+      } catch {
+        if (!cancelled) {
+          setCoworkers([]);
+          setChecklistItems([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setCoworkersLoading(false);
+          setChecklistLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, shiftId]);
 
   useEffect(() => {
     if (!open) return;
@@ -69,6 +123,8 @@ export function CompleteShiftReportDialog({
     setText("");
     setWorkStartTime(defaultStartTime);
     setWorkEndTime(defaultEndTime);
+    setLikedUserId(null);
+    setChecklistChecked({});
     resetPhoto();
   };
 
@@ -173,7 +229,12 @@ export function CompleteShiftReportDialog({
                         text,
                         workplacePhotoPath,
                         workStartTime,
-                        workEndTime
+                        workEndTime,
+                        ...(likedUserId ? { likedUserId } : {}),
+                        checklistAnswers: checklistItems.map((item) => ({
+                          itemId: item.id,
+                          checked: Boolean(checklistChecked[item.id])
+                        }))
                       });
                       setText("");
                       close();
@@ -298,6 +359,89 @@ export function CompleteShiftReportDialog({
                     />
                   ) : null}
                 </div>
+
+                {checklistLoading ? (
+                  <p className="text-sm text-muted">Загружаем чеклист…</p>
+                ) : checklistItems.length > 0 ? (
+                  <div className="space-y-2.5 rounded-lg border border-border/80 bg-foreground/[0.02] px-3 py-3">
+                    <div className="flex items-start gap-2">
+                      <ClipboardList className="mt-0.5 h-4 w-4 shrink-0 text-muted" aria-hidden />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-foreground">Чеклист смены</p>
+                        <p className="mt-0.5 text-[11px] leading-snug text-muted">
+                          Отметьте выполненные пункты. Невыполненные оставьте пустыми.
+                        </p>
+                      </div>
+                    </div>
+                    <ul className="space-y-2">
+                      {checklistItems.map((item) => (
+                        <li key={item.id}>
+                          <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border/70 bg-background/60 px-3 py-2.5 text-sm">
+                            <input
+                              type="checkbox"
+                              className="mt-0.5"
+                              checked={Boolean(checklistChecked[item.id])}
+                              disabled={pending}
+                              onChange={(e) => {
+                                setChecklistChecked((prev) => ({ ...prev, [item.id]: e.target.checked }));
+                                setError("");
+                              }}
+                            />
+                            <span>{item.label}</span>
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {coworkersLoading ? (
+                  <p className="text-sm text-muted">Загружаем коллег на смене…</p>
+                ) : coworkers.length > 0 ? (
+                  <div className="space-y-2.5 rounded-lg border border-border/80 bg-foreground/[0.02] px-3 py-3">
+                    <div className="flex items-start gap-2">
+                      <Heart className="mt-0.5 h-4 w-4 shrink-0 text-highlight" aria-hidden />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-foreground">Отметить коллегу</p>
+                        <p className="mt-0.5 text-[11px] leading-snug text-muted">
+                          Можно выбрать одного человека. Лайк анонимный — коллега не узнает, кто поставил.
+                        </p>
+                      </div>
+                    </div>
+                    <ul className="flex flex-wrap gap-2">
+                      {coworkers.map((coworker) => {
+                        const selected = likedUserId === coworker.id;
+                        return (
+                          <li key={coworker.id}>
+                            <button
+                              type="button"
+                              disabled={pending}
+                              aria-pressed={selected}
+                              onClick={() => {
+                                setLikedUserId((prev) => (prev === coworker.id ? null : coworker.id));
+                                setError("");
+                              }}
+                              className={cn(
+                                "inline-flex max-w-full items-center gap-2 rounded-full border px-2.5 py-1.5 pr-3 text-left transition-colors",
+                                selected
+                                  ? "border-highlight/50 bg-highlight/15"
+                                  : "border-foreground/15 bg-foreground/[0.06] hover:bg-foreground/[0.1]"
+                              )}
+                            >
+                              <UserAvatar
+                                name={coworker.name}
+                                photoUrl={coworker.telegramPhotoUrl}
+                                color={coworker.color}
+                                size="sm"
+                              />
+                              <span className="truncate text-xs font-semibold">{coworker.name}</span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ) : null}
 
                 {error ? <p className="text-sm font-medium text-foreground/85">{error}</p> : null}
 

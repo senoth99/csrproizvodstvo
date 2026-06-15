@@ -10,11 +10,12 @@ export default async function AdminPage() {
       <h1 className="text-2xl font-bold">Админка</h1>
       <div className="grid gap-3 md:grid-cols-2">
         <Link href="/admin/logs" className="card">Логи</Link>
+        <Link href="/admin/checklists" className="card">Чеклисты зон</Link>
       </div>
       <section className="card space-y-3">
-        <h2 className="text-lg font-semibold">QR прихода на производство</h2>
+        <h2 className="text-lg font-semibold">QR на производстве</h2>
         <p className="text-sm text-muted">
-          Распечатайте QR и повесьте на вход. Сотрудники отмечаются в разделе «Отметить приход».
+          Распечатайте QR и повесьте на вход. Сканирование начинает смену (если она запланирована на сегодня) и фиксирует приход.
         </p>
         <AdminWorkplaceQrDownload />
       </section>

@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { UserAvatar } from "@/components/UserAvatar";
+import { formatPhoneDisplay } from "@/lib/formatPhone";
 
 export type ManagerEmployeeListItem = {
   id: string;
   name: string;
   firstName: string | null;
   lastName: string | null;
+  phone: string | null;
   telegramUsername: string | null;
   /** Фото из Telegram после входа */
   telegramPhotoUrl?: string | null;
@@ -53,6 +55,7 @@ export function ManagerEmployeesClient({ employees }: Props) {
               <p className="truncate font-semibold">{emp.name}</p>
               <p className="truncate text-xs text-muted">
                 {emp.telegramUsername ? `@${emp.telegramUsername}` : "Нет Telegram-ника"}
+                {emp.phone ? ` · ${formatPhoneDisplay(emp.phone)}` : ""}
               </p>
             </div>
           </Link>

@@ -20,13 +20,21 @@ function extractTokenFromScan(text: string): string | null {
   return null;
 }
 
+type CheckInSuccess = {
+  arrivedAt: string;
+  shiftStarted: boolean;
+  shiftAlreadyInProgress: boolean;
+  noShiftToday: boolean;
+  zoneName: string | null;
+};
+
 function CheckInPageInner() {
   const searchParams = useSearchParams();
   const autoSubmitted = useRef(false);
   const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState<{ arrivedAt: string } | null>(null);
+  const [success, setSuccess] = useState<CheckInSuccess | null>(null);
 
   const submitCheckIn = useCallback(async (token: string) => {
     setBusy(true);
@@ -41,6 +49,10 @@ function CheckInPageInner() {
       const data = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
         arrivedAt?: string;
+        shiftStarted?: boolean;
+        shiftAlreadyInProgress?: boolean;
+        noShiftToday?: boolean;
+        zoneName?: string | null;
         error?: string;
       };
       if (!res.ok) {
@@ -57,7 +69,13 @@ function CheckInPageInner() {
         );
       }
       if (!data.ok || !data.arrivedAt) throw new Error("Не удалось отметиться");
-      setSuccess({ arrivedAt: data.arrivedAt });
+      setSuccess({
+        arrivedAt: data.arrivedAt,
+        shiftStarted: Boolean(data.shiftStarted),
+        shiftAlreadyInProgress: Boolean(data.shiftAlreadyInProgress),
+        noShiftToday: Boolean(data.noShiftToday),
+        zoneName: data.zoneName ?? null
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка");
     } finally {
@@ -88,11 +106,32 @@ function CheckInPageInner() {
     ? formatDateRu(safeParseISO(success.arrivedAt), "dd.MM.yyyy HH:mm")
     : "";
 
+  const successTitle = success
+    ? success.shiftStarted
+      ? "Смена началась"
+      : success.shiftAlreadyInProgress
+        ? "Смена уже идёт"
+        : success.noShiftToday
+          ? "Приход зафиксирован"
+          : "Вы успешно отметились"
+    : "";
+
+  const successBody = success
+    ? success.shiftStarted && success.zoneName
+      ? `${success.zoneName} · ${arrivedLabel}`
+      : success.shiftAlreadyInProgress && success.zoneName
+        ? `${success.zoneName} · приход ${arrivedLabel}`
+        : success.noShiftToday
+          ? `Смены на сегодня нет. Приход: ${arrivedLabel}`
+          : arrivedLabel
+    : "";
+
   return (
     <div className="mx-auto max-w-md space-y-4">
-      <h1 className="text-2xl font-bold">Отметить приход</h1>
+      <h1 className="text-2xl font-bold">Сканировать QR</h1>
       <p className="text-sm text-muted">
-        Наведите камеру на QR-код на производстве. После успешного скана появится подтверждение.
+        Наведите камеру на QR-код на производстве. Если у вас есть смена на сегодня — она начнётся автоматически.
+        Приход фиксируется в любом случае.
       </p>
 
       {!scanning ? (
@@ -105,7 +144,7 @@ function CheckInPageInner() {
           disabled={busy}
           className="btn-primary w-full min-h-[48px] touch-manipulation disabled:cursor-not-allowed disabled:opacity-70"
         >
-          {busy ? "Отмечаем…" : "Сканировать QR"}
+          {busy ? "Обрабатываем…" : "Сканировать QR"}
         </button>
       ) : (
         <div className="space-y-3">
@@ -135,8 +174,8 @@ function CheckInPageInner() {
           <div className="manager-modal-panel">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1 text-center">
-                <p className="text-lg font-bold">Вы успешно отметились</p>
-                {arrivedLabel ? <p className="mt-2 text-sm text-muted">{arrivedLabel}</p> : null}
+                <p className="text-lg font-bold">{successTitle}</p>
+                {successBody ? <p className="mt-2 text-sm text-muted">{successBody}</p> : null}
               </div>
               <button
                 type="button"

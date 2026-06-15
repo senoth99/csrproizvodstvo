@@ -8,6 +8,7 @@ import { UserRole } from "@/lib/enums";
 import { catchDb } from "@/lib/dbBoundary";
 import { prisma } from "@/lib/prisma";
 import { formatWorkedMinutes, getCurrentAppMonth } from "@/lib/workedHours";
+import { formatPhoneDisplay } from "@/lib/formatPhone";
 
 export default async function AdminUsersPage() {
   await requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]);
@@ -31,6 +32,9 @@ export default async function AdminUsersPage() {
       {users.map((u) => (
         <div key={u.id} className="card flex flex-wrap items-center gap-2">
           <span className="font-semibold">{u.name}</span>
+          {u.phone ? (
+            <span className="text-sm tabular-nums text-muted">{formatPhoneDisplay(u.phone)}</span>
+          ) : null}
           <RoleBadge role={u.role} />
           <span className="rounded-sm border border-border px-2 py-1 text-xs tabular-nums text-muted">
             {formatWorkedMinutes(workedMap.get(u.id) ?? 0)} за месяц

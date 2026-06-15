@@ -2,14 +2,26 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
+import { Heart, LogIn } from "lucide-react";
 import { updateEmployeeNdaSigned } from "@/app/actions";
 import { UserAvatar } from "@/components/UserAvatar";
 import type { ManagerEmployeeListItem } from "@/components/ManagerEmployeesClient";
 import { isFormalNameLineRedundant } from "@/lib/displayName";
+import { formatPhoneDisplay } from "@/lib/formatPhone";
 
-type Props = { employee: ManagerEmployeeListItem };
+type HistoryItem = { id: string; label: string; shiftLabel?: string };
 
-export function ManagerEmployeeProfileClient({ employee }: Props) {
+type Props = {
+  employee: ManagerEmployeeListItem;
+  arrivalHistory?: HistoryItem[];
+  likesHistory?: HistoryItem[];
+};
+
+export function ManagerEmployeeProfileClient({
+  employee,
+  arrivalHistory = [],
+  likesHistory = []
+}: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [ndaSigned, setNdaSigned] = useState(Boolean(employee.ndaSigned));
@@ -50,6 +62,7 @@ export function ManagerEmployeeProfileClient({ employee }: Props) {
           <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.08em] leading-none text-muted">
             {employee.telegramUsername ? `@${employee.telegramUsername}` : "—"}
           </p>
+          <p className="mt-2 text-sm tabular-nums text-foreground/90">{formatPhoneDisplay(employee.phone)}</p>
           {employee.firstName || employee.lastName
             ? !isFormalNameLineRedundant(employee.name, employee.firstName, employee.lastName) ? (
                 <p className="mt-2 text-xs leading-snug text-muted">
@@ -87,6 +100,53 @@ export function ManagerEmployeeProfileClient({ employee }: Props) {
               </span>
             </label>
           </div>
+        </section>
+
+        <section className="rounded-xl bg-surface/50 p-3">
+          <div className="flex items-center gap-2">
+            <LogIn className="h-4 w-4 text-muted" aria-hidden />
+            <p className="ui-section-kicker-strong">История приходов</p>
+          </div>
+          <p className="mt-1 text-[10px] leading-snug text-muted">Отметки по QR-коду на производстве.</p>
+          {arrivalHistory.length > 0 ? (
+            <ul className="mt-3 max-h-56 space-y-1.5 overflow-y-auto">
+              {arrivalHistory.map((item) => (
+                <li
+                  key={item.id}
+                  className="flex items-center justify-between rounded-lg border border-border/70 bg-card/70 px-3 py-2 text-sm"
+                >
+                  <span className="font-medium tabular-nums">{item.label}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-muted">Пока нет отметок прихода.</p>
+          )}
+        </section>
+
+        <section className="rounded-xl bg-surface/50 p-3">
+          <div className="flex items-center gap-2">
+            <Heart className="h-4 w-4 text-highlight" aria-hidden />
+            <p className="ui-section-kicker-strong">Полученные лайки</p>
+          </div>
+          <p className="mt-1 text-[10px] leading-snug text-muted">Лайки анонимны — не видно, кто поставил.</p>
+          {likesHistory.length > 0 ? (
+            <ul className="mt-3 max-h-56 space-y-1.5 overflow-y-auto">
+              {likesHistory.map((item) => (
+                <li
+                  key={item.id}
+                  className="rounded-lg border border-border/70 bg-card/70 px-3 py-2 text-sm"
+                >
+                  <p className="font-medium tabular-nums">{item.label}</p>
+                  {item.shiftLabel ? (
+                    <p className="mt-0.5 text-xs text-muted">{item.shiftLabel}</p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-muted">Пока нет лайков.</p>
+          )}
         </section>
       </div>
     </div>

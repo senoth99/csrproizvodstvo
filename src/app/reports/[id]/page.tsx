@@ -10,6 +10,7 @@ import { catchAuth, catchDb } from "@/lib/dbBoundary";
 import { requireAuth } from "@/lib/auth";
 import { ShiftReportStatus } from "@/lib/enums";
 import { formatDateRu, formatMoneyRu, isoFromWeekDay, weekDays } from "@/lib/utils";
+import { formatPhoneDisplay } from "@/lib/formatPhone";
 import { formatWorkedMinutes } from "@/lib/workedHours";
 import { normalizeReportPhotoPath } from "@/lib/workplaceReportPhoto";
 
@@ -49,7 +50,16 @@ export default async function ReportDetailPage({ params }: { params: Promise<{ i
             <div className="space-y-1">
               <h1 className="text-xl font-bold">Отчет по смене</h1>
               <p className="text-sm text-muted">{slot}</p>
-              {isAdmin ? <p className="text-sm font-medium">{report.user.name}</p> : null}
+              {isAdmin ? (
+                <p className="text-sm font-medium">
+                  {report.user.name}
+                  {report.user.phone ? (
+                    <span className="ml-2 font-normal tabular-nums text-muted">
+                      {formatPhoneDisplay(report.user.phone)}
+                    </span>
+                  ) : null}
+                </p>
+              ) : null}
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-2">
                 <ReportStatusBadge status={report.status} />
                 <p className="text-xs text-muted">

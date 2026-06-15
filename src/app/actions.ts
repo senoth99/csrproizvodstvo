@@ -14,8 +14,9 @@ import {
   requireRole
 } from "@/lib/auth";
 import { BRIGADES } from "@/lib/brigades";
+import { isValidPhone, normalizePhoneInput } from "@/lib/formatPhone";
 import { prisma } from "@/lib/prisma";
-import { reportSchema, shiftSchema, updateReportSchema, updateShiftSchema, userSchema, zoneLimitSchema, zoneSchema } from "@/lib/validation";
+import { reportSchema, shiftSchema, updateReportSchema, updateShiftSchema, updateZoneChecklistItemSchema, userSchema, zoneChecklistItemSchema, zoneLimitSchema, zoneSchema, profileNamesPhoneSchema } from "@/lib/validation";
 import { resolveAppPublicBaseUrl } from "@/lib/appUrl";
 import { writeAuditLog } from "@/lib/audit";
 import {
@@ -35,7 +36,7 @@ import {
 } from "@/lib/notifyAdmins";
 import { describeShiftBrief } from "@/lib/shiftBrief";
 import { prismaUserListNameSelect, prismaUserShiftBoardSelect } from "@/lib/prismaSafeUserInclude";
-import { APP_TIME_ZONE, isoFromWeekDay } from "@/lib/utils";
+import { APP_TIME_ZONE, isSameAppDay, isoFromWeekDay } from "@/lib/utils";
 import {
   getReportPhotoApiPath,
   resolveReportPhotoDiskPath
@@ -328,6 +329,10 @@ export async function toggleBrigadeAssignment(input: { brigadeId: string; dayOfW
   const dayOfWeek = Number(input.dayOfWeek);
   if (dayOfWeek < 1 || dayOfWeek > 7) throw new Error("Некорректный день недели");
   const weekStartDate = parseISO(input.weekStartDate);
+  const dayDate = isoFromWeekDay(weekStartDate, dayOfWeek);
+  if (actor.role === UserRole.EMPLOYEE && isSameAppDay(dayDate, new Date())) {
+    throw new Error("На сегодня нельзя записаться или изменить смену. Обратитесь к администратору.");
+  }
   const zones = await ensureBrigadeZones();
   const zone = zones.get(brigade.zoneName);
   if (!zone) throw new Error("Зона не найдена");
@@ -847,12 +852,73 @@ export async function endShift(shiftId: string) {
   revalidatePath("/me");
 }
 
+export async function getShiftChecklistForReport(shiftId: string) {
+  const user = await requireAuth();
+  const shift = await prisma.shift.findUniqueOrThrow({
+    where: { id: shiftId },
+    select: { userId: true, zoneId: true, status: true }
+  });
+  if (shift.userId !== user.id) throw new Error("Можно просматривать только свою смену.");
+  if (shift.status === ShiftStatus.CANCELLED) return [];
+
+  return prisma.zoneChecklistItem.findMany({
+    where: { zoneId: shift.zoneId, isActive: true },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    select: { id: true, label: true }
+  });
+}
+
+export async function getShiftCoworkersForLike(shiftId: string) {
+  const user = await requireAuth();
+  const shift = await prisma.shift.findUniqueOrThrow({
+    where: { id: shiftId },
+    select: {
+      userId: true,
+      weekStartDate: true,
+      dayOfWeek: true,
+      zoneId: true,
+      startTime: true,
+      endTime: true,
+      status: true
+    }
+  });
+  if (shift.userId !== user.id) throw new Error("Можно просматривать только свою смену.");
+  if (shift.status === ShiftStatus.CANCELLED) return [];
+
+  const coworkers = await prisma.shift.findMany({
+    where: {
+      weekStartDate: shift.weekStartDate,
+      dayOfWeek: shift.dayOfWeek,
+      zoneId: shift.zoneId,
+      startTime: shift.startTime,
+      endTime: shift.endTime,
+      status: { not: ShiftStatus.CANCELLED },
+      userId: { not: user.id }
+    },
+    select: {
+      user: {
+        select: { id: true, name: true, color: true, telegramPhotoUrl: true }
+      }
+    },
+    orderBy: { user: { name: "asc" } }
+  });
+
+  const seen = new Set<string>();
+  return coworkers
+    .map((row) => row.user)
+    .filter((u) => {
+      if (seen.has(u.id)) return false;
+      seen.add(u.id);
+      return true;
+    });
+}
+
 export async function submitShiftReport(input: unknown) {
   const user = await requireAuth();
   const data = reportSchema.parse(input);
   const shift = await prisma.shift.findUniqueOrThrow({
     where: { id: data.shiftId },
-    include: { report: true }
+    include: { report: true, zone: true }
   });
   if (shift.userId !== user.id) throw new Error("Можно отправлять отчет только по своей смене.");
   if (shift.status === ShiftStatus.CANCELLED) throw new Error("Смена отменена, отчёт недоступен.");
@@ -876,6 +942,36 @@ export async function submitShiftReport(input: unknown) {
   const { reportIdForPath } = await prisma.$transaction(async (tx) => {
     const freshReport = await tx.shiftReport.findUnique({ where: { shiftId: data.shiftId } });
     if (freshReport?.status === ShiftReportStatus.ACCEPTED) throw new Error("Отчёт уже принят.");
+
+    if (data.likedUserId) {
+      if (data.likedUserId === user.id) throw new Error("Нельзя поставить лайк самому себе.");
+      const coworkerShift = await tx.shift.findFirst({
+        where: {
+          userId: data.likedUserId,
+          weekStartDate: shift.weekStartDate,
+          dayOfWeek: shift.dayOfWeek,
+          zoneId: shift.zoneId,
+          startTime: shift.startTime,
+          endTime: shift.endTime,
+          status: { not: ShiftStatus.CANCELLED }
+        },
+        select: { id: true }
+      });
+      if (!coworkerShift) throw new Error("Можно отметить только коллегу на этой же смене.");
+    }
+
+    const zoneChecklist = await tx.zoneChecklistItem.findMany({
+      where: { zoneId: shift.zoneId, isActive: true },
+      select: { id: true }
+    });
+    const validItemIds = new Set(zoneChecklist.map((item) => item.id));
+    const submittedIds = new Set<string>();
+    for (const answer of data.checklistAnswers ?? []) {
+      if (!validItemIds.has(answer.itemId)) {
+        throw new Error("Некорректный пункт чеклиста.");
+      }
+      submittedIds.add(answer.itemId);
+    }
 
     const rep = await tx.shiftReport.upsert({
       where: { shiftId: data.shiftId },
@@ -911,6 +1007,32 @@ export async function submitShiftReport(input: unknown) {
       },
       update: { startedAt: workStartedAt, endedAt: workEndedAt }
     });
+
+    if (data.likedUserId) {
+      await tx.shiftPeerLike.upsert({
+        where: { shiftReportId: rep.id },
+        create: {
+          shiftReportId: rep.id,
+          fromUserId: user.id,
+          toUserId: data.likedUserId
+        },
+        update: { toUserId: data.likedUserId }
+      });
+    } else {
+      await tx.shiftPeerLike.deleteMany({ where: { shiftReportId: rep.id } });
+    }
+
+    await tx.shiftReportChecklistAnswer.deleteMany({ where: { shiftReportId: rep.id } });
+    if (data.checklistAnswers?.length) {
+      await tx.shiftReportChecklistAnswer.createMany({
+        data: data.checklistAnswers.map((answer) => ({
+          shiftReportId: rep.id,
+          checklistItemId: answer.itemId,
+          checked: answer.checked
+        }))
+      });
+    }
+
     return { reportIdForPath: rep.id };
   });
 
@@ -949,6 +1071,7 @@ export async function submitShiftReport(input: unknown) {
   revalidatePath(`/reports/${reportIdForPath}`);
   revalidatePath("/me");
   revalidatePath("/schedule");
+  revalidatePath("/manager");
 }
 
 export async function updateMyShiftReport(input: unknown) {
@@ -1166,17 +1289,14 @@ export async function getReportById(reportId: string) {
 
 export async function updateMyProfile(input: unknown) {
   const user = await requireAuth();
-  const schema = z.object({
-    firstName: z.string().trim().min(2, "Имя минимум 2 символа"),
-    lastName: z.string().trim().min(2, "Фамилия минимум 2 символа")
-  });
-  const data = schema.parse(input);
+  const data = profileNamesPhoneSchema.parse(input);
   const displayName = `${data.lastName} ${data.firstName}`.trim();
   await prisma.user.update({
     where: { id: user.id },
     data: {
       firstName: data.firstName,
       lastName: data.lastName,
+      phone: data.phone,
       name: displayName,
       profileCompleted: true
     }
@@ -1188,17 +1308,14 @@ export async function updateMyProfile(input: unknown) {
 export async function completeWelcomeProfile(input: unknown) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Нужна авторизация");
-  const schema = z.object({
-    firstName: z.string().trim().min(2, "Имя минимум 2 символа"),
-    lastName: z.string().trim().min(2, "Фамилия минимум 2 символа")
-  });
-  const data = schema.parse(input);
+  const data = profileNamesPhoneSchema.parse(input);
   const displayName = `${data.lastName} ${data.firstName}`.trim();
   await prisma.user.update({
     where: { id: user.id },
     data: {
       firstName: data.firstName,
       lastName: data.lastName,
+      phone: data.phone,
       name: displayName,
       profileCompleted: true
     }
@@ -1356,7 +1473,13 @@ export async function adminUpdateUserProfile(input: unknown) {
   const schema = z.object({
     userId: z.string().cuid(),
     firstName: z.string().trim().min(2, "Имя минимум 2 символа"),
-    lastName: z.string().trim().min(2, "Фамилия минимум 2 символа")
+    lastName: z.string().trim().min(2, "Фамилия минимум 2 символа"),
+    phone: z
+      .string()
+      .trim()
+      .optional()
+      .refine((v) => !v || isValidPhone(v), "Формат: +7 и 10 цифр")
+      .transform((v) => (v ? normalizePhoneInput(v) : undefined))
   });
   const data = schema.parse(input);
   if (!isSuper) {
@@ -1371,7 +1494,12 @@ export async function adminUpdateUserProfile(input: unknown) {
   const name = `${data.lastName} ${data.firstName}`.trim();
   await prisma.user.update({
     where: { id: data.userId },
-    data: { firstName: data.firstName, lastName: data.lastName, name }
+    data: {
+      firstName: data.firstName,
+      lastName: data.lastName,
+      name,
+      ...(data.phone !== undefined ? { phone: data.phone } : {})
+    }
   });
   await writeAuditLog({
     actorUserId: actor.id,
@@ -1448,4 +1576,96 @@ export async function deleteEmployeeByUsername(usernameInput: string) {
     entityId: username
   });
   revalidatePath("/manager/employees");
+}
+
+export async function getAdminZoneChecklists() {
+  await requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]);
+  await ensureBrigadeZones();
+  const brigadeZoneNames = new Set(BRIGADES.map((b) => b.zoneName));
+  const zones = await prisma.zone.findMany({
+    where: { isActive: true, name: { in: [...brigadeZoneNames] } },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    include: {
+      checklistItems: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }
+    }
+  });
+  return zones.map((zone) => ({
+    id: zone.id,
+    name: zone.name,
+    items: zone.checklistItems.map((item) => ({
+      id: item.id,
+      label: item.label,
+      sortOrder: item.sortOrder,
+      isActive: item.isActive
+    }))
+  }));
+}
+
+export async function createZoneChecklistItem(input: unknown) {
+  const actor = await requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]);
+  const data = zoneChecklistItemSchema.parse(input);
+  const zone = await prisma.zone.findUnique({ where: { id: data.zoneId }, select: { id: true } });
+  if (!zone) throw new Error("Зона не найдена.");
+  const maxSort = await prisma.zoneChecklistItem.aggregate({
+    where: { zoneId: data.zoneId },
+    _max: { sortOrder: true }
+  });
+  const item = await prisma.zoneChecklistItem.create({
+    data: {
+      zoneId: data.zoneId,
+      label: data.label.trim(),
+      sortOrder: (maxSort._max.sortOrder ?? -1) + 1
+    }
+  });
+  await writeAuditLog({
+    actorUserId: actor.id,
+    action: "CREATE_ZONE_CHECKLIST_ITEM",
+    entityType: "ZoneChecklistItem",
+    entityId: item.id,
+    payload: { zoneId: data.zoneId, label: data.label.trim() }
+  });
+  revalidatePath("/admin/checklists");
+  return item.id;
+}
+
+export async function updateZoneChecklistItem(input: unknown) {
+  const actor = await requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]);
+  const data = updateZoneChecklistItemSchema.parse(input);
+  const existing = await prisma.zoneChecklistItem.findUnique({
+    where: { id: data.id },
+    select: { id: true, zoneId: true }
+  });
+  if (!existing) throw new Error("Пункт чеклиста не найден.");
+  await prisma.zoneChecklistItem.update({
+    where: { id: data.id },
+    data: {
+      ...(data.label !== undefined ? { label: data.label.trim() } : {}),
+      ...(data.isActive !== undefined ? { isActive: data.isActive } : {})
+    }
+  });
+  await writeAuditLog({
+    actorUserId: actor.id,
+    action: "UPDATE_ZONE_CHECKLIST_ITEM",
+    entityType: "ZoneChecklistItem",
+    entityId: data.id,
+    payload: data
+  });
+  revalidatePath("/admin/checklists");
+}
+
+export async function deleteZoneChecklistItem(id: string) {
+  const actor = await requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]);
+  const existing = await prisma.zoneChecklistItem.findUnique({
+    where: { id },
+    select: { id: true }
+  });
+  if (!existing) throw new Error("Пункт чеклиста не найден.");
+  await prisma.zoneChecklistItem.delete({ where: { id } });
+  await writeAuditLog({
+    actorUserId: actor.id,
+    action: "DELETE_ZONE_CHECKLIST_ITEM",
+    entityType: "ZoneChecklistItem",
+    entityId: id
+  });
+  revalidatePath("/admin/checklists");
 }

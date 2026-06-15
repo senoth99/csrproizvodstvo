@@ -7,6 +7,7 @@ import { AuthScreenShell } from "@/components/AuthScreenShell";
 export function WelcomeProfileForm() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [phone, setPhone] = useState("");
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
 
@@ -19,7 +20,7 @@ export function WelcomeProfileForm() {
           setError("");
           start(async () => {
             try {
-              await completeWelcomeProfile({ firstName, lastName });
+              await completeWelcomeProfile({ firstName, lastName, phone });
               window.location.href = "/schedule";
             } catch (err) {
               setError(err instanceof Error ? err.message : "Ошибка сохранения");
@@ -30,9 +31,19 @@ export function WelcomeProfileForm() {
         <div className="grid gap-2">
           <input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Фамилия" autoComplete="family-name" />
           <input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Имя" autoComplete="given-name" />
+          <input
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="Телефон +7..."
+            autoComplete="tel"
+            inputMode="tel"
+          />
         </div>
 
-        <button className="btn-primary w-full rounded-xl py-3 text-sm font-bold" disabled={pending || !firstName.trim() || !lastName.trim()}>
+        <button
+          className="btn-primary w-full rounded-xl py-3 text-sm font-bold"
+          disabled={pending || !firstName.trim() || !lastName.trim() || !phone.trim()}
+        >
           {pending ? "Сохраняем профиль..." : "Продолжить"}
         </button>
 

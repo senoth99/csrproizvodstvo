@@ -6,11 +6,13 @@ import { Banknote, CircleDollarSign, WalletCards, X } from "lucide-react";
 import { managerRecordPayout } from "@/app/actions";
 import { UserAvatar } from "@/components/UserAvatar";
 import { formatMoneyRu } from "@/lib/utils";
+import { formatPhoneDisplay } from "@/lib/formatPhone";
 
 export type ManagerPayoutListItem = {
   id: string;
   name: string;
   telegramUsername: string | null;
+  phone: string | null;
   isActive: boolean;
   color: string;
   payoutDebtCents: number;
@@ -77,6 +79,7 @@ export function ManagerPayoutsClient({ employees }: Props) {
                   <p className="truncate font-semibold">{emp.name}</p>
                   <p className="truncate text-xs text-muted">
                     {emp.telegramUsername ? `@${emp.telegramUsername}` : "Без Telegram-ника"}
+                    {emp.phone ? ` · ${formatPhoneDisplay(emp.phone)}` : ""}
                   </p>
                 </div>
               </div>

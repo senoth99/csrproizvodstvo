@@ -5,26 +5,14 @@ import { prisma } from "@/lib/prisma";
 import { telegramSendMessage, telegramSendPhoto } from "@/lib/telegramBotHelpers";
 import { formatDateRu } from "@/lib/utils";
 import { resolveReportPhotoDiskPath } from "@/lib/workplaceReportPhoto";
+import { resolveUserTelegramChatId } from "@/lib/telegramChatId";
 
 type EmployeeShiftNotifyType =
   | typeof AppNotificationType.SHIFT_ADDED_BY_EMPLOYEE
   | typeof AppNotificationType.SHIFT_REMOVED_BY_EMPLOYEE;
 
-/** Только ADMIN и SUPER_ADMIN (без isManager). */
+/** ADMIN, SUPER_ADMIN и руководители (isManager) — все админские уведомления. */
 export async function getAdminRoleUserIds(excludeUserIds: string[] = []): Promise<string[]> {
-  const exclude = new Set(excludeUserIds);
-  const rows = await prisma.user.findMany({
-    where: {
-      isActive: true,
-      role: { in: [UserRole.ADMIN, UserRole.SUPER_ADMIN] }
-    },
-    select: { id: true }
-  });
-  return rows.map((r) => r.id).filter((id) => !exclude.has(id));
-}
-
-/** Кому слать обзорные уведомления по графику: роли ADMIN/SUPER_ADMIN и руководители (isManager). */
-export async function getScheduleMonitorUserIds(excludeUserIds: string[] = []): Promise<string[]> {
   const exclude = new Set(excludeUserIds);
   const rows = await prisma.user.findMany({
     where: {
@@ -34,6 +22,11 @@ export async function getScheduleMonitorUserIds(excludeUserIds: string[] = []): 
     select: { id: true }
   });
   return rows.map((r) => r.id).filter((id) => !exclude.has(id));
+}
+
+/** @deprecated Алиас — используйте getAdminRoleUserIds */
+export async function getScheduleMonitorUserIds(excludeUserIds: string[] = []): Promise<string[]> {
+  return getAdminRoleUserIds(excludeUserIds);
 }
 
 /** Колокольчик + Telegram всем, кто следит за графиком (кроме excludeUserIds). */
@@ -62,7 +55,7 @@ export async function notifyScheduleAdmins(input: {
   );
 }
 
-/** Колокольчик + Telegram только ADMIN и SUPER_ADMIN. */
+/** Колокольчик + Telegram всем ADMIN/SUPER_ADMIN и руководителям (isManager). */
 export async function notifyAdminRoleUsers(input: {
   type: string;
   title: string;
@@ -88,7 +81,7 @@ export async function notifyAdminRoleUsers(input: {
   );
 }
 
-/** Сотрудник сам поставил / снял смену (график, форма). Снятие — только ADMIN/SUPER_ADMIN в Telegram. */
+/** Сотрудник сам поставил / снял смену — всем ADMIN/SUPER_ADMIN и isManager. */
 export async function notifyAdminsEmployeeShiftChange(input: {
   type: EmployeeShiftNotifyType;
   employeeName: string;
@@ -104,19 +97,7 @@ export async function notifyAdminsEmployeeShiftChange(input: {
     ? `📅 ${input.employeeName} записался на смену:\n${input.brief}`
     : `📅 ${input.employeeName} снял смену:\n${input.brief}`;
 
-  if (added) {
-    await notifyScheduleAdmins({
-      type: input.type,
-      title,
-      body,
-      telegramText,
-      payload: input.payload,
-      excludeUserIds: input.excludeUserIds
-    });
-    return;
-  }
-
-  await notifyAdminRoleUsers({
+  await notifyScheduleAdmins({
     type: input.type,
     title,
     body,
@@ -226,12 +207,8 @@ export async function notifyAdminsShiftReportSubmitted(input: {
         skipTelegram: true
       });
 
-      const row = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { telegramId: true }
-      });
-      const chatId = row?.telegramId != null && row.telegramId !== "" ? Number(row.telegramId) : NaN;
-      if (!Number.isFinite(chatId)) return;
+      const chatId = await resolveUserTelegramChatId(userId);
+      if (chatId == null) return;
 
       await sendShiftReportTelegram(chatId, photoBytes, telegramHeader, reportText);
     })

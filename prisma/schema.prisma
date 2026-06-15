@@ -12,6 +12,8 @@ model User {
   name           String
   firstName      String?
   lastName       String?
+  /// Контактный телефон (заполняет сотрудник при онбординге).
+  phone          String?
   telegramId     String?       @unique
   telegramUsername String?
   telegramPhotoUrl String?
@@ -36,6 +38,9 @@ model User {
   appNotifications AppNotification[]
   acceptedShiftReports ShiftReport[] @relation("ShiftReportAcceptedBy")
   workplaceArrival   WorkplaceArrival?
+  workplaceArrivalLogs WorkplaceArrivalLog[]
+  peerLikesGiven     ShiftPeerLike[] @relation("ShiftPeerLikeFrom")
+  peerLikesReceived  ShiftPeerLike[] @relation("ShiftPeerLikeTo")
 }
 
 /// Последняя отметка прихода на производство (QR); повторный скан обновляет `arrivedAt`.
@@ -44,6 +49,16 @@ model WorkplaceArrival {
   userId    String   @unique
   arrivedAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// История отметок прихода (QR); каждый скан добавляет запись.
+model WorkplaceArrivalLog {
+  id        String   @id @default(cuid())
+  userId    String
+  arrivedAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, arrivedAt])
 }
 
 model AllowedTelegramUser {
@@ -99,6 +114,7 @@ model Zone {
   updatedAt   DateTime    @updatedAt
   limits      ZoneLimit[]
   shifts      Shift[]
+  checklistItems ZoneChecklistItem[]
 }
 
 model ZoneLimit {
@@ -202,6 +218,50 @@ model ShiftReport {
   shift              Shift     @relation(fields: [shiftId], references: [id], onDelete: Cascade)
   user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   acceptedBy         User?     @relation("ShiftReportAcceptedBy", fields: [acceptedByUserId], references: [id])
+  peerLike           ShiftPeerLike?
+  checklistAnswers   ShiftReportChecklistAnswer[]
+}
+
+/// Анонимный лайк коллеге при сдаче отчёта (один на отчёт, не себе).
+model ShiftPeerLike {
+  id           String      @id @default(cuid())
+  shiftReportId String     @unique
+  fromUserId   String
+  toUserId     String
+  createdAt    DateTime    @default(now())
+  shiftReport  ShiftReport @relation(fields: [shiftReportId], references: [id], onDelete: Cascade)
+  fromUser     User        @relation("ShiftPeerLikeFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser       User        @relation("ShiftPeerLikeTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@index([toUserId, createdAt])
+  @@index([createdAt])
+}
+
+/// Пункт чеклиста для зоны (настраивает админ).
+model ZoneChecklistItem {
+  id        String   @id @default(cuid())
+  zoneId    String
+  label     String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  zone      Zone     @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  reportAnswers ShiftReportChecklistAnswer[]
+
+  @@index([zoneId, sortOrder])
+}
+
+/// Отметки чеклиста в отчёте по смене.
+model ShiftReportChecklistAnswer {
+  id              String            @id @default(cuid())
+  shiftReportId   String
+  checklistItemId String
+  checked         Boolean           @default(false)
+  shiftReport     ShiftReport       @relation(fields: [shiftReportId], references: [id], onDelete: Cascade)
+  checklistItem   ZoneChecklistItem @relation(fields: [checklistItemId], references: [id], onDelete: Cascade)
+
+  @@unique([shiftReportId, checklistItemId])
 }
 
 model AuditLog {

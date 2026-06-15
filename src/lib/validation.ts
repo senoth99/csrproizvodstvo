@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isValidPhone, normalizePhoneInput } from "@/lib/formatPhone";
 import { ShiftSource, ShiftStatus, UserRole } from "./enums";
 
 export const userSchema = z.object({
@@ -47,7 +48,17 @@ export const reportSchema = z
     text: z.string().min(5),
     workplacePhotoPath: z.string().min(1),
     workStartTime: workTimeSchema,
-    workEndTime: workTimeSchema
+    workEndTime: workTimeSchema,
+    likedUserId: z.string().cuid().optional(),
+    checklistAnswers: z
+      .array(
+        z.object({
+          itemId: z.string().cuid(),
+          checked: z.boolean()
+        })
+      )
+      .optional()
+      .default([])
   })
   .superRefine((data, ctx) => {
     const [sh, sm] = data.workStartTime.split(":").map(Number);
@@ -63,6 +74,30 @@ export const reportSchema = z
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Смена не может длиться больше 24 часов.", path: ["workEndTime"] });
     }
   });
+
+const phoneFieldSchema = z
+  .string()
+  .trim()
+  .min(1, "Укажите контактный телефон")
+  .refine((v) => isValidPhone(v), "Формат: +7 и 10 цифр")
+  .transform(normalizePhoneInput);
+
+export const profileNamesPhoneSchema = z.object({
+  firstName: z.string().trim().min(2, "Имя минимум 2 символа"),
+  lastName: z.string().trim().min(2, "Фамилия минимум 2 символа"),
+  phone: phoneFieldSchema
+});
+
+export const zoneChecklistItemSchema = z.object({
+  zoneId: z.string().cuid(),
+  label: z.string().min(1).max(200)
+});
+
+export const updateZoneChecklistItemSchema = z.object({
+  id: z.string().cuid(),
+  label: z.string().min(1).max(200).optional(),
+  isActive: z.boolean().optional()
+});
 
 export const updateReportSchema = z
   .object({

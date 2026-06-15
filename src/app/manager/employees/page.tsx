@@ -41,7 +41,8 @@ export default async function ManagerEmployeesPage() {
           isManager: true,
           telegramPhotoUrl: true,
           color: true,
-          ndaSigned: true
+          ndaSigned: true,
+          phone: true
         }
       })
     ]);
@@ -87,7 +88,8 @@ export default async function ManagerEmployeesPage() {
             isManager: u.isManager,
             photoUrl: u.telegramPhotoUrl,
             color: u.color,
-            ndaSigned: u.ndaSigned
+            ndaSigned: u.ndaSigned,
+            phone: u.phone
           }))}
           superAdminFallback={null}
         />

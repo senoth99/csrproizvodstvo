@@ -31,6 +31,15 @@ export const BRIGADES: BrigadeConfig[] = [
     icon: "printer"
   },
   {
+    id: "printac-day",
+    title: "ПРИНТАК",
+    zoneName: "ПРИНТАК",
+    startTime: "10:00",
+    endTime: "18:00",
+    shiftLabel: "День",
+    icon: "printer"
+  },
+  {
     id: "cutting-day",
     title: "Вырезальщики",
     zoneName: "Вырезальщики",
@@ -71,6 +80,15 @@ export const BRIGADES: BrigadeConfig[] = [
     id: "dtf-plotter-evening",
     title: "ДТФ и Плоттер",
     zoneName: "ДТФ и Плоттер",
+    startTime: "18:00",
+    endTime: "00:00",
+    shiftLabel: "Вечер",
+    icon: "printer"
+  },
+  {
+    id: "printac-evening",
+    title: "ПРИНТАК",
+    zoneName: "ПРИНТАК",
     startTime: "18:00",
     endTime: "00:00",
     shiftLabel: "Вечер",

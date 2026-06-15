@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { AuthDbError, getCurrentUser } from "@/lib/auth";
+import { writeAuditLog } from "@/lib/audit";
+import { ShiftStatus } from "@/lib/enums";
 import { notifyAdminsShiftArrival } from "@/lib/notifyAdmins";
 import { prisma } from "@/lib/prisma";
+import { findUserShiftToday } from "@/lib/todayShift";
 import { getOrCreateWorkplaceQrToken } from "@/lib/workplaceQr";
 
 export async function POST(req: Request) {
@@ -45,12 +49,67 @@ export async function POST(req: Request) {
       update: { arrivedAt }
     });
 
+    await prisma.workplaceArrivalLog.create({
+      data: { userId: user.id, arrivedAt }
+    });
+
     await notifyAdminsShiftArrival({ employeeName: user.name, arrivedAt });
+
+    let shiftStarted = false;
+    let shiftAlreadyInProgress = false;
+    let noShiftToday = false;
+    let zoneName: string | null = null;
+
+    const todayShift = await findUserShiftToday(user.id);
+    if (todayShift) {
+      zoneName = todayShift.zone.name;
+      if (todayShift.status === ShiftStatus.PLANNED) {
+        const otherActive = await prisma.shift.count({
+          where: {
+            userId: user.id,
+            status: ShiftStatus.IN_PROGRESS,
+            id: { not: todayShift.id }
+          }
+        });
+        if (otherActive === 0) {
+          await prisma.shift.update({
+            where: { id: todayShift.id },
+            data: { status: ShiftStatus.IN_PROGRESS, updatedById: user.id }
+          });
+          await prisma.shiftTimeLog.upsert({
+            where: { shiftId: todayShift.id },
+            create: { shiftId: todayShift.id, userId: user.id, startedAt: arrivedAt },
+            update: { startedAt: arrivedAt }
+          });
+          await writeAuditLog({
+            actorUserId: user.id,
+            action: "START_SHIFT",
+            entityType: "Shift",
+            entityId: todayShift.id,
+            payload: { source: "qr" }
+          });
+          shiftStarted = true;
+        }
+      } else if (todayShift.status === ShiftStatus.IN_PROGRESS) {
+        shiftAlreadyInProgress = true;
+      }
+    } else {
+      noShiftToday = true;
+    }
+
+    revalidatePath("/manager");
+    revalidatePath(`/manager/employees/${user.id}`);
+    revalidatePath("/me");
+    revalidatePath("/schedule");
 
     return NextResponse.json({
       ok: true,
       updated: Boolean(existing),
-      arrivedAt: arrivedAt.toISOString()
+      arrivedAt: arrivedAt.toISOString(),
+      shiftStarted,
+      shiftAlreadyInProgress,
+      noShiftToday,
+      zoneName
     });
   } catch (e) {
     console.error("[api/workplace/check-in POST] Prisma error:", e);

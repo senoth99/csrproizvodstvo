@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { telegramSendMessage } from "@/lib/telegramBotHelpers";
+import { resolveUserTelegramChatId } from "@/lib/telegramChatId";
 
 /** Максимум записей в колокольчике на одного пользователя; более старые удаляются. */
 export const MAX_APP_NOTIFICATIONS_PER_USER = 10;
@@ -86,13 +87,8 @@ export async function notifyUserAppAndTelegram(input: {
 
     if (input.skipTelegram) return;
 
-    const user = await prisma.user.findUnique({
-      where: { id: input.userId },
-      select: { telegramId: true }
-    });
-    const raw = user?.telegramId;
-    const chatId = raw != null && raw !== "" ? Number(raw) : NaN;
-    if (!Number.isFinite(chatId)) return;
+    const chatId = await resolveUserTelegramChatId(input.userId);
+    if (chatId == null) return;
 
     const text =
       input.telegramText ?? `${input.title}\n\n${input.body}`.trim();

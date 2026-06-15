@@ -34,7 +34,9 @@ export const AppNotificationType = {
   /** Сотрудник отметился на производстве (QR) */
   SHIFT_ARRIVAL: "SHIFT_ARRIVAL",
   /** Сотрудник отправил отчёт по смене (с фото) */
-  SHIFT_REPORT_SUBMITTED: "SHIFT_REPORT_SUBMITTED"
+  SHIFT_REPORT_SUBMITTED: "SHIFT_REPORT_SUBMITTED",
+  /** Напоминание: завтра смена (21:00 МСК) */
+  SHIFT_REMINDER: "SHIFT_REMINDER"
 } as const;
 
 export type AppNotificationType = (typeof AppNotificationType)[keyof typeof AppNotificationType];

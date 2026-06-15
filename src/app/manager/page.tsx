@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ChevronRight, HandCoins, Users } from "lucide-react";
 import { redirect } from "next/navigation";
+import { ManagerPanelInsights } from "@/components/ManagerPanelInsights";
 import { ManagerTodayBrigades } from "@/components/ManagerTodayBrigades";
 import { requireAuth } from "@/lib/auth";
 import { BRIGADES } from "@/lib/brigades";
@@ -9,7 +10,7 @@ import { catchDb } from "@/lib/dbBoundary";
 import { ShiftStatus } from "@/lib/enums";
 import { prisma } from "@/lib/prisma";
 import { prismaUserShiftBoardSelect } from "@/lib/prismaSafeUserInclude";
-import { formatDateRu, getAppISODay, getWeekStart, weekDays } from "@/lib/utils";
+import { addAppDays, formatDateRu, getAppISODay, getWeekStart, startOfAppDay, weekDays } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -23,21 +24,70 @@ export default async function ManagerPanelPage() {
   const weekdayLabel = weekDays.find((d) => d.index === dayOfWeek)?.name ?? "Сегодня";
   const dateLabel = formatDateRu(today, "dd.MM.yyyy");
 
-  const todayLoaded = await catchDb("manager/today-brigades", async () =>
-    prisma.shift.findMany({
-      where: {
-        weekStartDate: weekStart,
-        dayOfWeek,
-        status: { not: ShiftStatus.CANCELLED }
-      },
-      include: { user: { select: prismaUserShiftBoardSelect }, zone: true }
-    })
-  );
+  const todayLoaded = await catchDb("manager/today-brigades", async () => {
+    const dayStart = startOfAppDay(today);
+    const dayEnd = addAppDays(today, 1);
+
+    const [shifts, peerLikes, arrivalLogs] = await Promise.all([
+      prisma.shift.findMany({
+        where: {
+          weekStartDate: weekStart,
+          dayOfWeek,
+          status: { not: ShiftStatus.CANCELLED }
+        },
+        include: { user: { select: prismaUserShiftBoardSelect }, zone: true }
+      }),
+      prisma.shiftPeerLike.findMany({
+        where: {
+          shiftReport: {
+            shift: {
+              weekStartDate: weekStart,
+              dayOfWeek
+            }
+          }
+        },
+        select: {
+          toUser: { select: prismaUserShiftBoardSelect }
+        }
+      }),
+      prisma.workplaceArrivalLog.findMany({
+        where: { arrivedAt: { gte: dayStart, lt: dayEnd } },
+        orderBy: { arrivedAt: "desc" },
+        select: {
+          id: true,
+          arrivedAt: true,
+          user: { select: prismaUserShiftBoardSelect }
+        }
+      })
+    ]);
+
+    return { shifts, peerLikes, arrivalLogs };
+  });
 
   const allowedKeys = new Set(BRIGADES.map((b) => `${b.zoneName}|${b.startTime}|${b.endTime}`));
+
+  const todayArrivals = todayLoaded.ok
+    ? todayLoaded.data.arrivalLogs.map((row) => ({
+        id: row.id,
+        userId: row.user.id,
+        name: row.user.name,
+        color: row.user.color,
+        telegramPhotoUrl: row.user.telegramPhotoUrl ?? null,
+        arrivedAtIso: row.arrivedAt.toISOString(),
+        arrivedAtLabel: formatDateRu(row.arrivedAt, "HH:mm")
+      }))
+    : [];
+
+  const latestArrivalByUser = new Map<string, string>();
+  for (const row of todayArrivals) {
+    if (!latestArrivalByUser.has(row.userId)) {
+      latestArrivalByUser.set(row.userId, row.arrivedAtLabel);
+    }
+  }
+
   const todayShifts =
     todayLoaded.ok
-      ? todayLoaded.data
+      ? todayLoaded.data.shifts
           .filter((s) => allowedKeys.has(`${s.zone.name}|${s.startTime}|${s.endTime}`))
           .map((s) => ({
             id: s.id,
@@ -48,9 +98,36 @@ export default async function ManagerPanelPage() {
               name: s.user.name,
               color: s.user.color,
               telegramPhotoUrl: s.user.telegramPhotoUrl ?? null
-            }
+            },
+            arrivalLabel: latestArrivalByUser.get(s.user.id) ?? null
           }))
       : [];
+
+  const likeCounts = new Map<
+    string,
+    { user: { id: string; name: string; color: string; telegramPhotoUrl: string | null }; count: number }
+  >();
+  if (todayLoaded.ok) {
+    for (const row of todayLoaded.data.peerLikes) {
+      const existing = likeCounts.get(row.toUser.id);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        likeCounts.set(row.toUser.id, { user: row.toUser, count: 1 });
+      }
+    }
+  }
+  const todayLikes = todayLoaded.ok
+    ? [...likeCounts.values()]
+        .sort((a, b) => b.count - a.count || a.user.name.localeCompare(b.user.name, "ru"))
+        .map(({ user, count }) => ({
+          userId: user.id,
+          name: user.name,
+          color: user.color,
+          telegramPhotoUrl: user.telegramPhotoUrl ?? null,
+          count
+        }))
+    : [];
 
   return (
     <div className="space-y-5">
@@ -66,6 +143,8 @@ export default async function ManagerPanelPage() {
       ) : (
         <p className="text-sm text-muted">Не удалось загрузить бригады на сегодня. Обновите страницу позже.</p>
       )}
+
+      {todayLoaded.ok ? <ManagerPanelInsights likes={todayLikes} arrivals={todayArrivals} /> : null}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <Link

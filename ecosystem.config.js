@@ -44,6 +44,21 @@ module.exports = {
         PORT: process.env.PORT || 3000,
         ...envFromFile
       }
+    },
+    {
+      name: "shift-reminders",
+      script: "bash",
+      args: "scripts/shift-reminders-cron.sh",
+      cwd: appDir,
+      cron_restart: "0 21 * * *",
+      autorestart: false,
+      watch: false,
+      env: {
+        NODE_ENV: "production",
+        PORT: process.env.PORT || 3000,
+        TZ: "Europe/Moscow",
+        ...envFromFile
+      }
     }
   ]
 };

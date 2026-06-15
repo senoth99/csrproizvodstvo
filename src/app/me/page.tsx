@@ -42,17 +42,21 @@ export default async function MePage() {
           accentColor={user.color}
           initialFirstName={user.firstName ?? ""}
           initialLastName={user.lastName ?? ""}
+          initialPhone={user.phone ?? ""}
         />
         <Link
           href="/check-in"
           className="-mt-2 card flex min-h-[52px] w-full max-w-full touch-manipulation items-center justify-between gap-3 transition-colors hover:bg-foreground/[0.04] active:opacity-90"
-          aria-label="Отметить приход на производство"
+          aria-label="Сканировать QR и начать смену"
         >
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-transparent">
               <QrCode className="h-5 w-5 text-muted" aria-hidden />
             </span>
-            <p className="text-lg font-semibold tracking-tight">Отметить приход</p>
+            <div>
+              <p className="text-lg font-semibold tracking-tight">Сканировать QR</p>
+              <p className="text-xs text-muted">Начать смену и отметить приход</p>
+            </div>
           </div>
           <ChevronRight className="h-6 w-6 shrink-0 text-muted" aria-hidden />
         </Link>

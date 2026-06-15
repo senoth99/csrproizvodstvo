@@ -48,6 +48,8 @@ export function MyShiftsSection({ weekShifts }: { weekShifts: ShiftItem[] }) {
       !reportPending &&
       !reportAccepted;
 
+    const isInProgress = s.status === ShiftStatus.IN_PROGRESS;
+
     return (
       <div
         key={s.id}
@@ -76,6 +78,12 @@ export function MyShiftsSection({ weekShifts }: { weekShifts: ShiftItem[] }) {
           <Clock3 size={16} aria-hidden />
           {s.startTime} - {s.endTime}
         </div>
+
+        {isInProgress && !reportPending && !reportAccepted ? (
+          <p className="rounded-sm border border-foreground/20 bg-foreground/[0.06] px-3 py-2 text-center text-[10px] font-bold uppercase tracking-display text-foreground">
+            Смена идёт
+          </p>
+        ) : null}
 
         {s.status !== ShiftStatus.CANCELLED ? (
           reportPending ? (

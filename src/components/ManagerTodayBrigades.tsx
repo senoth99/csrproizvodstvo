@@ -21,6 +21,7 @@ export type ManagerTodayShift = {
   startTime: string;
   endTime: string;
   user: { name: string; color: string; telegramPhotoUrl: string | null };
+  arrivalLabel?: string | null;
 };
 
 function cellKey(zoneName: string, startTime: string, endTime: string) {
@@ -110,7 +111,12 @@ export function ManagerTodayBrigades({
                           color={s.user.color}
                           size="sm"
                         />
-                        <span className="truncate text-xs font-semibold text-foreground/95">{s.user.name}</span>
+                        <span className="min-w-0 truncate text-xs font-semibold text-foreground/95">
+                          {s.user.name}
+                          {s.arrivalLabel ? (
+                            <span className="ml-1.5 font-normal tabular-nums text-muted">· {s.arrivalLabel}</span>
+                          ) : null}
+                        </span>
                       </li>
                     ))}
                   </ul>

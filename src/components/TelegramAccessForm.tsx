@@ -29,6 +29,7 @@ type UserRow = {
   firstName: string;
   lastName: string;
   name: string;
+  phone?: string | null;
   isActive: boolean;
   isManager: boolean;
   photoUrl?: string | null;
@@ -52,6 +53,7 @@ type MergedRow = {
   name: string;
   firstName: string;
   lastName: string;
+  phone?: string | null;
   accessRowId?: string;
   photoUrl?: string | null;
   color?: string | null;
@@ -110,6 +112,7 @@ export function TelegramAccessForm({
         name: u.name,
         firstName: u.firstName,
         lastName: u.lastName,
+        phone: u.phone ?? null,
         accessRowId: undefined,
         isManager: u.isManager,
         photoUrl: u.photoUrl ?? null,
@@ -345,7 +348,8 @@ export function TelegramAccessForm({
                 telegramUsername: employeeProfileRow.username,
                 telegramPhotoUrl: employeeProfileRow.photoUrl ?? null,
                 color: employeeProfileRow.color ?? "#1f8f5f",
-                ndaSigned: employeeProfileRow.ndaSigned ?? false
+                ndaSigned: employeeProfileRow.ndaSigned ?? false,
+                phone: employeeProfileRow.phone ?? null
               }}
             />
           </div>

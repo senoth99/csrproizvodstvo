@@ -7,7 +7,7 @@ import { managerAssignBrigadeShift, managerRemoveShift, toggleBrigadeAssignment 
 import { BrigadeModeTabs } from "@/components/BrigadeModeTabs";
 import { UserAvatar } from "@/components/UserAvatar";
 import type { BrigadeConfig, BrigadeShiftLabel } from "@/lib/brigades";
-import { formatDateRu, isBeforeAppDay, isoFromWeekDay, safeParseISO, weekDays } from "@/lib/utils";
+import { formatDateRu, isBeforeAppDay, isSameAppDay, isoFromWeekDay, safeParseISO, weekDays } from "@/lib/utils";
 
 export type BrigadeAssignableEmployee = {
   id: string;
@@ -218,9 +218,13 @@ export function BrigadeBoard({
                     const mine = cellShifts.some((s) => s.userId === currentUserId);
                     const dayDate = isoFromWeekDay(weekStartDate, d.index);
                     const isPastDay = isBeforeAppDay(dayDate, new Date());
+                    const isToday = isSameAppDay(dayDate, new Date());
+                    const isEmployeeTodayLocked =
+                      !canManageSchedule && weekMode === "current" && isToday;
+                    const isCellDisabled = pending || isPastDay || isEmployeeTodayLocked;
 
                     const openPicker = () => {
-                      if (isPastDay || pending) return;
+                      if (isCellDisabled) return;
                       setPickCtx({
                         brigadeId: brigade.id,
                         dayOfWeek: d.index,
@@ -238,13 +242,20 @@ export function BrigadeBoard({
                           <span className="font-semibold text-muted">{d.name}</span>
                           <div className="flex items-center gap-2">
                             {isPastDay ? <span className="text-[10px] text-muted">Недоступно</span> : null}
+                            {isEmployeeTodayLocked ? (
+                              <span className="text-[10px] text-muted">Запись закрыта</span>
+                            ) : null}
                             <span className="text-muted">{formatDateRu(dayDate, "dd.MM")}</span>
                           </div>
                         </div>
                         <div className="flex flex-wrap gap-1.5">
                           {cellShifts.length === 0 ? (
                             <span className="text-xs text-muted">
-                              {canManageSchedule ? "Нажмите, чтобы назначить сотрудника" : "Пусто — нажми, чтобы записаться"}
+                              {isEmployeeTodayLocked
+                                ? "На сегодня запись закрыта"
+                                : canManageSchedule
+                                  ? "Нажмите, чтобы назначить сотрудника"
+                                  : "Пусто — нажми, чтобы записаться"}
                             </span>
                           ) : (
                             cellShifts.map((s) =>
@@ -253,10 +264,10 @@ export function BrigadeBoard({
                                   key={s.id}
                                   type="button"
                                   data-shift-chip="1"
-                                  disabled={pending || isPastDay}
+                                  disabled={pending || isPastDay || isEmployeeTodayLocked}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    if (isPastDay || pending) return;
+                                    if (isPastDay || isEmployeeTodayLocked || pending) return;
                                     setRemoveShift(s);
                                   }}
                                   className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-1 text-left text-[10px] transition-all duration-200 ease-out ${
@@ -304,7 +315,7 @@ export function BrigadeBoard({
                         <div
                           key={`${brigade.id}-${d.index}`}
                           role="button"
-                          tabIndex={isPastDay || pending ? -1 : 0}
+                          tabIndex={isCellDisabled ? -1 : 0}
                           onClick={openPicker}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
@@ -313,7 +324,7 @@ export function BrigadeBoard({
                             }
                           }}
                           className={`w-full rounded-xl border p-2 text-left outline-none transition-all duration-200 ease-out focus-visible:ring-2 focus-visible:ring-foreground/25 ${
-                            isPastDay
+                            isCellDisabled
                               ? "cursor-not-allowed border-border bg-muted/[0.04] opacity-55"
                               : mine
                                 ? "cursor-pointer border-border bg-transparent hover:bg-foreground/[0.05]"
@@ -329,7 +340,7 @@ export function BrigadeBoard({
                       <button
                         key={`${brigade.id}-${d.index}`}
                         type="button"
-                        disabled={pending || isPastDay}
+                        disabled={isCellDisabled}
                         onClick={() =>
                           start(async () => {
                             try {
@@ -348,7 +359,7 @@ export function BrigadeBoard({
                           })
                         }
                         className={`w-full rounded-xl border p-2 text-left transition-all duration-200 ease-out ${
-                          isPastDay
+                          isCellDisabled
                             ? "cursor-not-allowed border-border bg-muted/[0.04] opacity-55"
                             : mine
                               ? "border-border bg-transparent"

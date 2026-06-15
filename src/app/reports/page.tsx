@@ -7,6 +7,7 @@ import { getReports } from "@/app/actions";
 import { catchAuth, catchDb } from "@/lib/dbBoundary";
 import { requireAuth } from "@/lib/auth";
 import { formatDateRu, isoFromWeekDay, weekDays } from "@/lib/utils";
+import { formatPhoneDisplay } from "@/lib/formatPhone";
 import { formatWorkedMinutes } from "@/lib/workedHours";
 
 export default async function ReportsPage() {
@@ -50,7 +51,14 @@ export default async function ReportsPage() {
                   >
                     <div className="min-w-0 flex-1 space-y-1.5 text-left">
                       {isAdmin ? (
-                        <p className="text-sm font-medium text-foreground">{r.user.name}</p>
+                        <p className="text-sm font-medium text-foreground">
+                          {r.user.name}
+                          {r.user.phone ? (
+                            <span className="ml-2 font-normal tabular-nums text-muted">
+                              {formatPhoneDisplay(r.user.phone)}
+                            </span>
+                          ) : null}
+                        </p>
                       ) : null}
                       <div className="flex flex-wrap items-center gap-2">
                         <ReportStatusBadge status={r.status} />

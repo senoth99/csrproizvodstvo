@@ -13,6 +13,10 @@ import { sessionCookieSecure } from "./sessionCookie";
 const COOKIE_NAME = "ps_session";
 export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
 
+function profileReady(user: { profileCompleted: boolean; phone?: string | null }) {
+  return user.profileCompleted && Boolean(user.phone?.trim());
+}
+
 export class AuthDbError extends Error {
   constructor(message?: string, options?: { cause?: unknown }) {
     super(message ?? "Auth database error");
@@ -244,7 +248,7 @@ export async function requireRole(roles: UserRoleValue[]) {
   try {
     const user = await getCurrentUser();
     if (!user) redirect("/telegram/login");
-    if (!user.profileCompleted) redirect("/welcome");
+    if (!profileReady(user)) redirect("/welcome");
     const role = Object.values(UserRole).includes(user.role as UserRoleValue)
       ? (user.role as UserRoleValue)
       : UserRole.EMPLOYEE;
@@ -262,7 +266,7 @@ export async function requireAuth() {
   try {
     const user = await getCurrentUser();
     if (!user) redirect("/telegram/login");
-    if (!user.profileCompleted) redirect("/welcome");
+    if (!profileReady(user)) redirect("/welcome");
     return user;
   } catch (e) {
     if (isNextRedirectError(e) || isNextHttpAccessFallbackError(e)) throw e;
@@ -283,7 +287,7 @@ export async function requireRoleApi(
     if (!user) {
       return { ok: false, response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
     }
-    if (!user.profileCompleted) {
+    if (!profileReady(user)) {
       return { ok: false, response: NextResponse.json({ error: "Profile incomplete" }, { status: 403 }) };
     }
     const role = Object.values(UserRole).includes(user.role as UserRoleValue)

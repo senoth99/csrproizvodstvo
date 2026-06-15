@@ -14,7 +14,7 @@ export const prismaUserShiftBoardSelect = {
   telegramPhotoUrl: true
 } as const;
 
-export const prismaUserListNameSelect = { id: true, name: true } as const;
+export const prismaUserListNameSelect = { id: true, name: true, phone: true } as const;
 
 /** Поля User для сессии и страниц — без `include: true`, устойчивее к дрейфу схемы SQLite. */
 export const prismaUserSessionSelect = {
@@ -22,6 +22,7 @@ export const prismaUserSessionSelect = {
   name: true,
   firstName: true,
   lastName: true,
+  phone: true,
   telegramId: true,
   telegramUsername: true,
   telegramPhotoUrl: true,
@@ -42,6 +43,7 @@ export const prismaUserSessionSelectLegacy = {
   name: true,
   firstName: true,
   lastName: true,
+  phone: true,
   telegramId: true,
   telegramUsername: true,
   telegramPhotoUrl: true,
@@ -60,6 +62,7 @@ export type PrismaUserSessionRow = {
   name: string;
   firstName: string | null;
   lastName: string | null;
+  phone: string | null;
   telegramId: string | null;
   telegramUsername: string | null;
   telegramPhotoUrl: string | null;
@@ -130,6 +133,7 @@ export async function findEmployeesWithPayoutDebtForManagerSafe() {
         telegramUsername: true,
         isActive: true,
         color: true,
+        phone: true,
         payoutDebtCents: true
       }
     });
@@ -142,7 +146,8 @@ export async function findEmployeesWithPayoutDebtForManagerSafe() {
         name: true,
         telegramUsername: true,
         isActive: true,
-        color: true
+        color: true,
+        phone: true
       }
     });
     return rows.map((r) => ({ ...r, payoutDebtCents: 0 }));
