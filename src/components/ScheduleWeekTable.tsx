@@ -1,6 +1,11 @@
 import type { ScheduleTableEmployee } from "@/lib/scheduleTable";
 import { formatDateRu, isoFromWeekDay, safeParseISO, weekDays } from "@/lib/utils";
-import { ScheduleTableCell } from "@/components/ScheduleTableCell";
+import {
+  SCHEDULE_SHIFT_CELL_CLASS,
+  ScheduleTableCell,
+  ScheduleTableEmployeeCell,
+  ScheduleTableScroll
+} from "@/components/ScheduleTableCell";
 
 export function ScheduleWeekTable({
   employees,
@@ -23,24 +28,18 @@ export function ScheduleWeekTable({
         <h2 className="text-sm font-bold uppercase tracking-display">Общий график на неделю</h2>
         <p className="mt-1 text-xs text-muted">Фамилия, имя и место работы — видят все сотрудники.</p>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[640px] border-collapse text-left text-sm">
+      <ScheduleTableScroll>
+        <table className="w-max min-w-full border-collapse text-left text-sm">
           <caption className="sr-only">
-            Таблица общего графика на неделю: фамилия, имя и место работы по дням недели
+            Таблица общего графика на неделю: сотрудник и место работы по дням недели
           </caption>
           <thead>
             <tr className="border-b border-border bg-foreground/[0.03]">
               <th
                 scope="col"
-                className="sticky left-0 z-10 min-w-[5.5rem] border-r border-border/80 bg-card px-3 py-2 text-[10px] font-bold uppercase tracking-display"
+                className="sticky left-0 z-30 w-[6.75rem] min-w-[6.75rem] max-w-[6.75rem] border-r border-border/80 bg-card px-2 py-2 text-[10px] font-bold uppercase tracking-display shadow-[4px_0_8px_-4px_rgba(0,0,0,0.45)]"
               >
-                Фамилия
-              </th>
-              <th
-                scope="col"
-                className="sticky left-[5.5rem] z-10 min-w-[5rem] border-r border-border/80 bg-card px-3 py-2 text-[10px] font-bold uppercase tracking-display"
-              >
-                Имя
+                Сотрудник
               </th>
               {weekDays.map((d) => {
                 const dayDate = isoFromWeekDay(weekStart, d.index);
@@ -48,7 +47,7 @@ export function ScheduleWeekTable({
                   <th
                     key={d.index}
                     scope="col"
-                    className="min-w-[5rem] px-2 py-2 text-[10px] font-bold uppercase tracking-display text-muted"
+                    className={`${SCHEDULE_SHIFT_CELL_CLASS} px-1 py-2 text-center text-[10px] font-bold uppercase tracking-display text-muted`}
                   >
                     <span className="block">{d.name.slice(0, 2)}</span>
                     <span className="block font-normal tabular-nums">{formatDateRu(dayDate, "dd.MM")}</span>
@@ -60,14 +59,9 @@ export function ScheduleWeekTable({
           <tbody>
             {employees.map((row) => (
               <tr key={row.userId} className="border-b border-border/60 last:border-0">
-                <td className="sticky left-0 z-10 border-r border-border/80 bg-card px-3 py-2 font-medium">
-                  {row.lastName}
-                </td>
-                <td className="sticky left-[5.5rem] z-10 border-r border-border/80 bg-card px-3 py-2">
-                  {row.firstName}
-                </td>
+                <ScheduleTableEmployeeCell lastName={row.lastName} firstName={row.firstName} />
                 {weekDays.map((d) => (
-                  <td key={d.index} className="px-2 py-2 align-top">
+                  <td key={d.index} className={`${SCHEDULE_SHIFT_CELL_CLASS} px-1 py-2 align-top`}>
                     <ScheduleTableCell cell={row.byDay[d.index] ?? null} />
                   </td>
                 ))}
@@ -75,7 +69,7 @@ export function ScheduleWeekTable({
             ))}
           </tbody>
         </table>
-      </div>
+      </ScheduleTableScroll>
     </div>
   );
 }

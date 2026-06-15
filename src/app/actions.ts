@@ -989,7 +989,13 @@ export async function submitShiftReport(input: unknown) {
         workplacePhotoPath: expectedPhotoPath,
         workStartTime: data.workStartTime,
         workEndTime: data.workEndTime,
-        workedMinutes
+        workedMinutes,
+        status: ShiftReportStatus.PENDING_REVIEW,
+        acceptedAt: null,
+        acceptedByUserId: null,
+        accrualAmountCents: null,
+        accrualAppearanceCents: null,
+        accrualWorkCents: null
       }
     });
 

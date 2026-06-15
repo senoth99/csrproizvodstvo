@@ -21,6 +21,9 @@ type CoworkerOption = {
 
 function formatShiftReportSubmitError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
+  if (msg.includes("no such table") && (msg.includes("ShiftPeerLike") || msg.includes("ShiftReportChecklistAnswer"))) {
+    return "На сервере не применены миграции БД. Администратору: git pull && ./deploy.sh (или npx prisma migrate deploy).";
+  }
   if (msg.includes("Unknown argument") && msg.includes("status")) {
     return "На сервере не обновлены Prisma и база: выполните «npx prisma db push» и «npx prisma generate», затем перезапустите приложение.";
   }
@@ -236,7 +239,6 @@ export function CompleteShiftReportDialog({
                           checked: Boolean(checklistChecked[item.id])
                         }))
                       });
-                      setText("");
                       close();
                       router.refresh();
                     } catch (err) {

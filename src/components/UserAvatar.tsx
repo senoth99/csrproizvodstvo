@@ -1,4 +1,6 @@
-import Image from "next/image";
+"use client";
+
+import { useState } from "react";
 
 type UserAvatarProps = {
   name: string;
@@ -23,26 +25,23 @@ const sizeClassMap = {
   lg: "h-12 w-12 text-sm"
 } as const;
 
-const sizePxMap = {
-  sm: 16,
-  md: 44,
-  lg: 48
-} as const;
-
 export function UserAvatar({ name, photoUrl, color, size = "md", className = "" }: UserAvatarProps) {
+  const [photoFailed, setPhotoFailed] = useState(false);
   const sizeClass = sizeClassMap[size];
-  const px = sizePxMap[size];
   const baseClass = `inline-flex items-center justify-center rounded-full border border-border object-cover ${sizeClass} ${className}`.trim();
+  const showPhoto = Boolean(photoUrl?.trim()) && !photoFailed;
 
-  if (photoUrl) {
+  if (showPhoto) {
     return (
-      <Image
-        src={photoUrl}
+      // Telegram CDN-хосты непредсказуемы — сырой img без next/image, с fallback на инициалы.
+      // eslint-disable-next-line @next/next/no-img-element -- external avatar URLs
+      <img
+        src={photoUrl!}
         alt={name}
-        width={px}
-        height={px}
-        unoptimized
         className={baseClass}
+        loading="lazy"
+        decoding="async"
+        onError={() => setPhotoFailed(true)}
       />
     );
   }

@@ -1,5 +1,10 @@
 import type { ScheduleTableMonthEmployee } from "@/lib/scheduleTable";
-import { ScheduleTableCell } from "@/components/ScheduleTableCell";
+import {
+  SCHEDULE_MONTH_SHIFT_CELL_CLASS,
+  ScheduleTableCell,
+  ScheduleTableEmployeeCell,
+  ScheduleTableScroll
+} from "@/components/ScheduleTableCell";
 
 export function ScheduleMonthTable({
   employees,
@@ -20,30 +25,24 @@ export function ScheduleMonthTable({
         <h2 className="text-sm font-bold uppercase tracking-display">Общий график на месяц</h2>
         <p className="mt-1 text-xs text-muted">Фамилия, имя и место работы по дням месяца.</p>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+      <ScheduleTableScroll>
+        <table className="w-max min-w-full border-collapse text-left text-sm">
           <caption className="sr-only">
-            Таблица общего графика на месяц: фамилия, имя и место работы по дням месяца
+            Таблица общего графика на месяц: сотрудник и место работы по дням месяца
           </caption>
           <thead>
             <tr className="border-b border-border bg-foreground/[0.03]">
               <th
                 scope="col"
-                className="sticky left-0 z-10 min-w-[5.5rem] border-r border-border/80 bg-card px-3 py-2 text-[10px] font-bold uppercase tracking-display"
+                className="sticky left-0 z-30 w-[6.75rem] min-w-[6.75rem] max-w-[6.75rem] border-r border-border/80 bg-card px-2 py-2 text-[10px] font-bold uppercase tracking-display shadow-[4px_0_8px_-4px_rgba(0,0,0,0.45)]"
               >
-                Фамилия
-              </th>
-              <th
-                scope="col"
-                className="sticky left-[5.5rem] z-10 min-w-[5rem] border-r border-border/80 bg-card px-3 py-2 text-[10px] font-bold uppercase tracking-display"
-              >
-                Имя
+                Сотрудник
               </th>
               {days.map((d) => (
                 <th
                   key={d.dayOfMonth}
                   scope="col"
-                  className={`min-w-[3.25rem] px-1 py-2 text-center text-[10px] font-bold uppercase tracking-display ${
+                  className={`${SCHEDULE_MONTH_SHIFT_CELL_CLASS} px-0.5 py-2 text-center text-[10px] font-bold uppercase tracking-display ${
                     d.isWeekend ? "text-muted/70" : "text-muted"
                   }`}
                 >
@@ -56,25 +55,22 @@ export function ScheduleMonthTable({
           <tbody>
             {employees.map((row) => (
               <tr key={row.userId} className="border-b border-border/60 last:border-0">
-                <td className="sticky left-0 z-10 border-r border-border/80 bg-card px-3 py-2 font-medium">
-                  {row.lastName}
-                </td>
-                <td className="sticky left-[5.5rem] z-10 border-r border-border/80 bg-card px-3 py-2">
-                  {row.firstName}
-                </td>
+                <ScheduleTableEmployeeCell lastName={row.lastName} firstName={row.firstName} />
                 {days.map((d) => (
                   <td
                     key={d.dayOfMonth}
-                    className={`px-1 py-1.5 align-top ${d.isWeekend ? "bg-foreground/[0.02]" : ""}`}
+                    className={`${SCHEDULE_MONTH_SHIFT_CELL_CLASS} px-0.5 py-1.5 align-top ${
+                      d.isWeekend ? "bg-foreground/[0.02]" : ""
+                    }`}
                   >
-                    <ScheduleTableCell cell={row.byDayOfMonth[d.dayOfMonth] ?? null} />
+                    <ScheduleTableCell cell={row.byDayOfMonth[d.dayOfMonth] ?? null} compact />
                   </td>
                 ))}
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </ScheduleTableScroll>
     </div>
   );
 }
