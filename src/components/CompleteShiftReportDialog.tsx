@@ -352,6 +352,8 @@ export function CompleteShiftReportDialog({
                     ) : null}
                   </div>
                   {photoPreviewUrl ? (
+                    // blob: preview — next/image не поддерживает object URL
+                    // eslint-disable-next-line @next/next/no-img-element -- local blob preview before upload
                     <img
                       src={photoPreviewUrl}
                       alt="Превью рабочего места"

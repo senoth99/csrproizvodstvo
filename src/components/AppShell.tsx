@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { SquarePen } from "lucide-react";
 import { BottomNav } from "@/components/BottomNav";
@@ -32,10 +33,13 @@ export function AppShell({
             <div className="flex justify-start">{authenticated ? <NotificationBell /> : null}</div>
             <div className="flex justify-center">
               <Link href="/me" aria-label="Открыть личный кабинет">
-                <img
+                <Image
                   src={BRAND_LOGO_SRC}
                   alt="Logo"
+                  width={210}
+                  height={48}
                   className="h-12 w-auto max-w-[210px] object-contain opacity-95"
+                  priority
                 />
               </Link>
             </div>

@@ -20,6 +20,12 @@ const nextConfig: NextConfig = {
     serverActions: {
       bodySizeLimit: "2mb"
     }
+  },
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "t.me", pathname: "/**" },
+      { protocol: "https", hostname: "telegram.org", pathname: "/**" }
+    ]
   }
 };
 

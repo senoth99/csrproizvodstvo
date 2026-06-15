@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { BRAND_LOGO_SRC } from "@/lib/brandLogo";
+import { BrandLogo } from "@/components/BrandLogo";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -25,7 +25,7 @@ export function AuthScreenShell({
         <div className="space-y-3 text-center">
           <div className="relative mx-auto flex h-28 w-28 items-center justify-center">
             <div className="absolute inset-0 rounded-full bg-accent/20 blur-2xl" />
-            <img src={BRAND_LOGO_SRC} alt="Logo" className="relative h-24 w-24 object-contain animate-logo-spin" />
+            <BrandLogo className="relative h-24 w-24 animate-logo-spin" size={96} priority />
           </div>
           <h1 className={cn(titleClassName)}>{title}</h1>
           {description ? (

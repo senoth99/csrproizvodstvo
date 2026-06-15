@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getContactTelegramUrl, getContactTelegramUsername } from "@/lib/contactTelegram";
-import { BRAND_LOGO_SRC } from "@/lib/brandLogo";
+import { BrandLogo } from "@/components/BrandLogo";
 
 export default function AccessDeniedPage() {
   const handle = getContactTelegramUsername();
@@ -12,7 +12,7 @@ export default function AccessDeniedPage() {
       <div className="relative w-full max-w-md space-y-6 rounded-lg border border-border bg-background px-6 py-8 text-center animate-in">
         <div className="relative mx-auto flex h-28 w-28 items-center justify-center">
           <div className="absolute inset-0 rounded-full bg-accent/20 blur-2xl" />
-          <img src={BRAND_LOGO_SRC} alt="" className="relative h-24 w-24 object-contain animate-logo-spin" />
+          <BrandLogo className="relative h-24 w-24 animate-logo-spin" size={96} alt="" />
         </div>
 
         <div className="space-y-2">

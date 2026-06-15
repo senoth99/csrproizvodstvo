@@ -10,11 +10,17 @@ import { addAppDays, formatDateRu, safeParseISO } from "@/lib/utils";
 export function WeekModeSwitch({
   mode,
   currentWeekStartIso,
-  nextWeekStartIso
+  nextWeekStartIso,
+  scheduleView = "brigades",
+  monthYear,
+  monthMonth
 }: {
   mode: "current" | "next";
   currentWeekStartIso: string;
   nextWeekStartIso: string;
+  scheduleView?: "brigades" | "table";
+  monthYear: number;
+  monthMonth: number;
 }) {
   const router = useRouter();
   const currentStart = safeParseISO(currentWeekStartIso);
@@ -22,8 +28,13 @@ export function WeekModeSwitch({
   const range = (start: Date) => `${formatDateRu(start, "dd.MM")} - ${formatDateRu(addAppDays(start, 6), "dd.MM")}`;
 
   const setMode = (target: "current" | "next") => {
-    if (target === "next") router.push("/schedule?week=next");
-    else router.push("/schedule");
+    const params = new URLSearchParams();
+    if (scheduleView === "table") params.set("view", "table");
+    if (target === "next") params.set("week", "next");
+    const mm = String(monthMonth).padStart(2, "0");
+    params.set("month", `${monthYear}-${mm}`);
+    const q = params.toString();
+    router.push(q ? `/schedule?${q}` : "/schedule");
   };
 
   return (

@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { ServiceUnavailable } from "@/components/ServiceUnavailable";
 import { ReportTextEditor } from "@/components/ReportTextEditor";
 import { ReportReviewActions } from "@/components/ReportReviewActions";
@@ -126,10 +127,13 @@ export default async function ReportDetailPage({ params }: { params: Promise<{ i
           {photoSrc ? (
             <div className="space-y-2">
               <p className="text-sm font-medium text-foreground">Фото рабочего места</p>
-              <img
+              <Image
                 src={photoSrc}
                 alt="Рабочее место на смене"
-                className="max-h-80 w-full rounded-lg border border-border object-cover"
+                width={1200}
+                height={900}
+                unoptimized
+                className="max-h-80 h-auto w-full rounded-lg border border-border object-cover"
               />
             </div>
           ) : null}
