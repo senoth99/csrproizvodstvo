@@ -1,6 +1,7 @@
 "use client";
 
-import { CalendarDays, Clock3, Wrench } from "lucide-react";
+import Link from "next/link";
+import { CalendarDays, Clock3, QrCode, Wrench } from "lucide-react";
 import { CompleteShiftReportDialog } from "@/components/CompleteShiftReportDialog";
 import { ShiftReportStatus, ShiftStatus } from "@/lib/enums";
 import {
@@ -43,17 +44,16 @@ export function MyShiftsSection({ weekShifts }: { weekShifts: ShiftItem[] }) {
       "dd.MM"
     )} · ${s.startTime}–${s.endTime}`;
 
-    const showCompleteFab =
-      s.status !== ShiftStatus.CANCELLED &&
-      !reportPending &&
-      !reportAccepted;
-
     const isInProgress = s.status === ShiftStatus.IN_PROGRESS;
+    const canSubmitReport =
+      s.status !== ShiftStatus.CANCELLED && !reportPending && !reportAccepted && isInProgress;
+    const showQrHint =
+      s.status === ShiftStatus.PLANNED && isToday && !reportPending && !reportAccepted;
 
     return (
       <div
         key={s.id}
-        className={`card space-y-2${showCompleteFab ? " relative pb-12 pr-12" : ""}`}
+        className={`card space-y-2${canSubmitReport ? " relative pb-12 pr-12" : ""}`}
       >
         <div className="flex items-center justify-between gap-2 text-sm font-semibold">
           <div className="flex items-center gap-2">
@@ -85,6 +85,16 @@ export function MyShiftsSection({ weekShifts }: { weekShifts: ShiftItem[] }) {
           </p>
         ) : null}
 
+        {showQrHint ? (
+          <Link
+            href="/check-in"
+            className="flex items-center justify-center gap-2 rounded-sm border border-border bg-background px-3 py-2.5 text-center text-[10px] font-bold uppercase tracking-display text-foreground transition-colors hover:bg-foreground/[0.06]"
+          >
+            <QrCode size={14} aria-hidden />
+            Сканировать QR, чтобы начать
+          </Link>
+        ) : null}
+
         {s.status !== ShiftStatus.CANCELLED ? (
           reportPending ? (
             <p className="rounded-sm border border-highlight/45 bg-highlight/12 px-3 py-2.5 text-center text-[10px] font-bold uppercase tracking-display text-foreground">
@@ -94,14 +104,14 @@ export function MyShiftsSection({ weekShifts }: { weekShifts: ShiftItem[] }) {
             <p className="rounded-sm border border-accent/45 bg-accent/15 px-3 py-2.5 text-center text-[10px] font-bold uppercase tracking-display text-foreground">
               Смена принята
             </p>
-          ) : (
+          ) : canSubmitReport ? (
             <CompleteShiftReportDialog
               shiftId={s.id}
               headline={shiftHeadline}
               defaultStartTime={s.startTime}
               defaultEndTime={s.endTime}
             />
-          )
+          ) : null
         ) : null}
       </div>
     );

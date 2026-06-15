@@ -936,9 +936,6 @@ export async function getShiftCoworkersForLike(shiftId: string) {
       userId: true,
       weekStartDate: true,
       dayOfWeek: true,
-      zoneId: true,
-      startTime: true,
-      endTime: true,
       status: true
     }
   });
@@ -949,9 +946,6 @@ export async function getShiftCoworkersForLike(shiftId: string) {
     where: {
       weekStartDate: shift.weekStartDate,
       dayOfWeek: shift.dayOfWeek,
-      zoneId: shift.zoneId,
-      startTime: shift.startTime,
-      endTime: shift.endTime,
       status: { not: ShiftStatus.CANCELLED },
       userId: { not: user.id }
     },
@@ -982,6 +976,9 @@ export async function submitShiftReport(input: unknown) {
   });
   if (shift.userId !== user.id) throw new Error("Можно отправлять отчет только по своей смене.");
   if (shift.status === ShiftStatus.CANCELLED) throw new Error("Смена отменена, отчёт недоступен.");
+  if (shift.status !== ShiftStatus.IN_PROGRESS) {
+    throw new Error("Сначала отметьтесь на производстве по QR-коду, чтобы начать смену.");
+  }
 
   const expectedPhotoPath = getReportPhotoApiPath(data.shiftId);
   const legacyPhotoPath = `/uploads/reports/${data.shiftId}.jpg`;
@@ -1010,14 +1007,11 @@ export async function submitShiftReport(input: unknown) {
           userId: data.likedUserId,
           weekStartDate: shift.weekStartDate,
           dayOfWeek: shift.dayOfWeek,
-          zoneId: shift.zoneId,
-          startTime: shift.startTime,
-          endTime: shift.endTime,
           status: { not: ShiftStatus.CANCELLED }
         },
         select: { id: true }
       });
-      if (!coworkerShift) throw new Error("Можно отметить только коллегу на этой же смене.");
+      if (!coworkerShift) throw new Error("Можно отметить только сотрудника с сменой сегодня.");
     }
 
     const zoneChecklist = await tx.zoneChecklistItem.findMany({

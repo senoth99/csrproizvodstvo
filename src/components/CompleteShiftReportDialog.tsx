@@ -501,7 +501,7 @@ export function CompleteShiftReportDialog({
                     </ul>
                   </div>
                 ) : (
-                  <p className="py-6 text-center text-sm text-muted">На этой смене нет других сотрудников.</p>
+                  <p className="py-6 text-center text-sm text-muted">Сегодня на смене нет других сотрудников.</p>
                 )}
 
                 {error ? <p className="text-sm font-medium text-foreground/85">{error}</p> : null}
