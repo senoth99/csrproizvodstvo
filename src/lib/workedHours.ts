@@ -28,6 +28,12 @@ export function computeWorkedMinutes(workStartTime: string, workEndTime: string)
   return diff;
 }
 
+/** HH:mm в часовом поясе приложения. */
+export function formatTimeHm(date: Date, timeZone = APP_TIME_ZONE): string {
+  const z = toZonedTime(date, timeZone);
+  return `${String(z.getHours()).padStart(2, "0")}:${String(z.getMinutes()).padStart(2, "0")}`;
+}
+
 export function formatWorkedMinutes(totalMinutes: number | null | undefined): string {
   if (totalMinutes == null || totalMinutes <= 0) return "—";
   const h = Math.floor(totalMinutes / 60);

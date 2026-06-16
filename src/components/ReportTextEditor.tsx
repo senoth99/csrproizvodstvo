@@ -67,7 +67,7 @@ export function ReportTextEditor({
               <input
                 id={`edit-work-start-${reportId}`}
                 type="time"
-                className="w-full rounded-lg border border-border bg-transparent px-3 py-2 text-sm"
+                className="input-time"
                 value={workStartTime}
                 onChange={(e) => setWorkStartTime(e.target.value)}
                 disabled={pending}
@@ -80,18 +80,20 @@ export function ReportTextEditor({
               <input
                 id={`edit-work-end-${reportId}`}
                 type="time"
-                className="w-full rounded-lg border border-border bg-transparent px-3 py-2 text-sm"
+                className="input-time"
                 value={workEndTime}
                 onChange={(e) => setWorkEndTime(e.target.value)}
                 disabled={pending}
               />
             </div>
-            {workedPreview ? (
-              <p className="col-span-2 text-xs text-muted">
-                Отработано: <span className="font-semibold text-foreground">{workedPreview}</span>
-              </p>
-            ) : null}
           </div>
+          <p className="min-h-5 text-xs text-muted">
+            {workedPreview ? (
+              <>
+                Отработано: <span className="font-semibold text-foreground">{workedPreview}</span>
+              </>
+            ) : null}
+          </p>
           <textarea
             className="min-h-32 w-full resize-y rounded-lg border border-border bg-transparent px-3 py-2.5 text-sm leading-relaxed outline-none focus-visible:outline-none"
             value={text}

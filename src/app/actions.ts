@@ -45,7 +45,7 @@ import {
   getReportPhotoApiPath,
   resolveReportPhotoDiskPath
 } from "@/lib/workplaceReportPhoto";
-import { computeWorkedMinutes, getCurrentAppMonth, groupMonthlyWorkedByUser } from "@/lib/workedHours";
+import { computeWorkedMinutes, formatTimeHm, getCurrentAppMonth, groupMonthlyWorkedByUser } from "@/lib/workedHours";
 import type {
   BrigadeBoardShift,
   ManagerAssignBrigadeResult,
@@ -964,6 +964,28 @@ export async function getShiftChecklistForReport(shiftId: string) {
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     select: { id: true, label: true }
   });
+}
+
+export async function getShiftReportTimes(shiftId: string) {
+  const user = await requireAuth();
+  const shift = await prisma.shift.findUniqueOrThrow({
+    where: { id: shiftId },
+    select: {
+      userId: true,
+      status: true,
+      timeLog: { select: { startedAt: true } }
+    }
+  });
+  if (shift.userId !== user.id) throw new Error("Можно просматривать только свою смену.");
+  if (shift.status === ShiftStatus.CANCELLED) throw new Error("Смена отменена.");
+  if (shift.status !== ShiftStatus.IN_PROGRESS) {
+    throw new Error("Сначала отметьтесь на производстве по QR-коду, чтобы начать смену.");
+  }
+  if (!shift.timeLog?.startedAt) {
+    throw new Error("Не найдено время начала смены. Отметьтесь по QR-коду ещё раз.");
+  }
+
+  return { workStartTime: formatTimeHm(shift.timeLog.startedAt) };
 }
 
 export async function getShiftCoworkersForLike(shiftId: string) {

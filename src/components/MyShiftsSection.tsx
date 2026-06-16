@@ -89,8 +89,6 @@ export function MyShiftsSection({ weekShifts }: { weekShifts: ShiftItem[] }) {
               <CompleteShiftReportDialog
                 shiftId={s.id}
                 headline={shiftHeadline}
-                defaultStartTime={s.startTime}
-                defaultEndTime={s.endTime}
                 inlineTrigger
               />
             </div>

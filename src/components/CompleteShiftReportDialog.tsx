@@ -4,10 +4,10 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { Camera, ClipboardCheck, ClipboardList, Heart, ImagePlus } from "lucide-react";
-import { getShiftChecklistForReport, getShiftCoworkersForLike, submitShiftReport } from "@/app/actions";
+import { getShiftChecklistForReport, getShiftCoworkersForLike, getShiftReportTimes, submitShiftReport } from "@/app/actions";
 import { UserAvatar } from "@/components/UserAvatar";
 import { compressImageFile } from "@/lib/clientImageCompress";
-import { computeWorkedMinutes, formatWorkedMinutes } from "@/lib/workedHours";
+import { computeWorkedMinutes, formatTimeHm, formatWorkedMinutes } from "@/lib/workedHours";
 import { cn } from "@/lib/utils";
 
 type ChecklistItem = { id: string; label: string };
@@ -38,14 +38,10 @@ function formatShiftReportSubmitError(err: unknown): string {
 export function CompleteShiftReportDialog({
   shiftId,
   headline,
-  defaultStartTime = "",
-  defaultEndTime = "",
   inlineTrigger = false
 }: {
   shiftId: string;
   headline: string;
-  defaultStartTime?: string;
-  defaultEndTime?: string;
   /** В строке «Смена идёт» — без absolute, чтобы не накладывалось на бейдж */
   inlineTrigger?: boolean;
 }) {
@@ -53,8 +49,8 @@ export function CompleteShiftReportDialog({
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<ReportStep>("report");
   const [text, setText] = useState("");
-  const [workStartTime, setWorkStartTime] = useState(defaultStartTime);
-  const [workEndTime, setWorkEndTime] = useState(defaultEndTime);
+  const [workStartTime, setWorkStartTime] = useState("");
+  const [workEndTime, setWorkEndTime] = useState("");
   const [workplacePhotoPath, setWorkplacePhotoPath] = useState("");
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState("");
   const [photoUploading, setPhotoUploading] = useState(false);
@@ -69,6 +65,9 @@ export function CompleteShiftReportDialog({
   const [mounted, setMounted] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
+  const [endTimeEdited, setEndTimeEdited] = useState(false);
+
+  const getEffectiveWorkEndTime = () => (endTimeEdited ? workEndTime : formatTimeHm(new Date()));
 
   useEffect(() => {
     setMounted(true);
@@ -83,21 +82,29 @@ export function CompleteShiftReportDialog({
     setChecklistItems([]);
     setChecklistChecked({});
     setLikedUserId(null);
+    setEndTimeEdited(false);
+    setWorkStartTime("");
+    setWorkEndTime("");
     void (async () => {
       try {
-        const [list, checklist] = await Promise.all([
+        const [list, checklist, times] = await Promise.all([
           getShiftCoworkersForLike(shiftId),
-          getShiftChecklistForReport(shiftId)
+          getShiftChecklistForReport(shiftId),
+          getShiftReportTimes(shiftId)
         ]);
         if (!cancelled) {
           setCoworkers(list);
           setChecklistItems(checklist);
           setChecklistChecked(Object.fromEntries(checklist.map((item) => [item.id, false])));
+          setWorkStartTime(times.workStartTime);
+          setWorkEndTime(formatTimeHm(new Date()));
+          setError("");
         }
-      } catch {
+      } catch (err) {
         if (!cancelled) {
           setCoworkers([]);
           setChecklistItems([]);
+          setError(err instanceof Error ? err.message : "Не удалось загрузить данные смены.");
         }
       } finally {
         if (!cancelled) {
@@ -131,19 +138,24 @@ export function CompleteShiftReportDialog({
     setStep("report");
     setError("");
     setText("");
-    setWorkStartTime(defaultStartTime);
-    setWorkEndTime(defaultEndTime);
+    setWorkStartTime("");
+    setWorkEndTime("");
+    setEndTimeEdited(false);
     setLikedUserId(null);
     setChecklistChecked({});
     resetPhoto();
   };
 
   const validateReportFields = () => {
+    const effectiveEndTime = getEffectiveWorkEndTime();
+    if (!endTimeEdited) {
+      setWorkEndTime(effectiveEndTime);
+    }
     if (text.trim().length < 5) {
       setError("Напишите чуть подробнее — минимум 5 символов.");
       return false;
     }
-    if (!workStartTime || !workEndTime) {
+    if (!workStartTime || !effectiveEndTime) {
       setError("Укажите время начала и окончания работы.");
       return false;
     }
@@ -155,6 +167,10 @@ export function CompleteShiftReportDialog({
   };
 
   const submitReport = (likeId: string | null) => {
+    const effectiveEndTime = getEffectiveWorkEndTime();
+    if (!endTimeEdited) {
+      setWorkEndTime(effectiveEndTime);
+    }
     start(async () => {
       try {
         await submitShiftReport({
@@ -162,7 +178,7 @@ export function CompleteShiftReportDialog({
           text,
           workplacePhotoPath,
           workStartTime,
-          workEndTime,
+          workEndTime: effectiveEndTime,
           ...(likeId ? { likedUserId: likeId } : {}),
           checklistAnswers: checklistItems.map((item) => ({
             itemId: item.id,
@@ -194,9 +210,10 @@ export function CompleteShiftReportDialog({
   };
 
   const workedPreview = (() => {
-    if (!workStartTime || !workEndTime) return null;
+    const effectiveEndTime = getEffectiveWorkEndTime();
+    if (!workStartTime || !effectiveEndTime) return null;
     try {
-      return formatWorkedMinutes(computeWorkedMinutes(workStartTime, workEndTime));
+      return formatWorkedMinutes(computeWorkedMinutes(workStartTime, effectiveEndTime));
     } catch {
       return null;
     }
@@ -329,46 +346,55 @@ export function CompleteShiftReportDialog({
                 }}
               >
                 <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-foreground" htmlFor={`work-start-${shiftId}`}>
-                      Начало работы
-                    </label>
-                    <input
-                      id={`work-start-${shiftId}`}
-                      type="time"
-                      className="w-full rounded-lg border border-border bg-transparent px-3 py-2 text-sm"
-                      value={workStartTime}
-                      onChange={(e) => {
-                        setWorkStartTime(e.target.value);
-                        setError("");
-                      }}
-                      disabled={pending}
-                      required
-                    />
+                <div className="space-y-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                    <div className="min-w-0 flex-1">
+                      <label className="mb-2 block text-sm font-medium text-foreground" htmlFor={`work-start-${shiftId}`}>
+                        Начало работы
+                      </label>
+                      <input
+                        id={`work-start-${shiftId}`}
+                        type="time"
+                        className="input-time"
+                        value={workStartTime}
+                        onChange={(e) => {
+                          setWorkStartTime(e.target.value);
+                          setError("");
+                        }}
+                        disabled={pending || checklistLoading || coworkersLoading}
+                        required
+                      />
+                      <p className="mt-1 text-[11px] text-muted">По QR-отметке на смене</p>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <label className="mb-2 block text-sm font-medium text-foreground" htmlFor={`work-end-${shiftId}`}>
+                        Конец работы
+                      </label>
+                      <input
+                        id={`work-end-${shiftId}`}
+                        type="time"
+                        className="input-time"
+                        value={workEndTime}
+                        onChange={(e) => {
+                          setEndTimeEdited(true);
+                          setWorkEndTime(e.target.value);
+                          setError("");
+                        }}
+                        disabled={pending || checklistLoading || coworkersLoading}
+                        required
+                      />
+                      <p className="mt-1 text-[11px] text-muted">
+                        {endTimeEdited ? "Изменено вручную" : "Подставится при отправке"}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-foreground" htmlFor={`work-end-${shiftId}`}>
-                      Конец работы
-                    </label>
-                    <input
-                      id={`work-end-${shiftId}`}
-                      type="time"
-                      className="w-full rounded-lg border border-border bg-transparent px-3 py-2 text-sm"
-                      value={workEndTime}
-                      onChange={(e) => {
-                        setWorkEndTime(e.target.value);
-                        setError("");
-                      }}
-                      disabled={pending}
-                      required
-                    />
-                  </div>
-                  {workedPreview ? (
-                    <p className="col-span-2 text-sm text-muted">
-                      Отработано: <span className="font-semibold text-foreground">{workedPreview}</span>
-                    </p>
-                  ) : null}
+                  <p className="min-h-5 text-sm text-muted">
+                    {workedPreview ? (
+                      <>
+                        Отработано: <span className="font-semibold text-foreground">{workedPreview}</span>
+                      </>
+                    ) : null}
+                  </p>
                 </div>
 
                 <div>
