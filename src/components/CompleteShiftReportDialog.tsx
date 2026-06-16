@@ -355,13 +355,11 @@ export function CompleteShiftReportDialog({
                       <input
                         id={`work-start-${shiftId}`}
                         type="time"
-                        className="input-time"
+                        className="input-time input-time-readonly"
                         value={workStartTime}
-                        onChange={(e) => {
-                          setWorkStartTime(e.target.value);
-                          setError("");
-                        }}
-                        disabled={pending || checklistLoading || coworkersLoading}
+                        readOnly
+                        tabIndex={-1}
+                        aria-readonly="true"
                         required
                       />
                       <p className="mt-1 text-[11px] text-muted">По QR-отметке на смене</p>
@@ -485,13 +483,13 @@ export function CompleteShiftReportDialog({
                         </p>
                       </div>
                     </div>
-                    <ul className="space-y-2">
+                    <ul className="space-y-1.5">
                       {checklistItems.map((item) => (
                         <li key={item.id}>
-                          <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border/70 bg-background/60 px-3 py-2.5 text-sm">
+                          <label className="grid cursor-pointer grid-cols-[1.125rem_minmax(0,1fr)] items-center gap-3 rounded-lg border border-border/70 bg-background/60 px-3 py-3 text-sm">
                             <input
                               type="checkbox"
-                              className="mt-0.5"
+                              className="size-[1.125rem] shrink-0 rounded-sm border border-border accent-accent"
                               checked={Boolean(checklistChecked[item.id])}
                               disabled={pending}
                               onChange={(e) => {
@@ -499,7 +497,7 @@ export function CompleteShiftReportDialog({
                                 setError("");
                               }}
                             />
-                            <span>{item.label}</span>
+                            <span className="leading-snug">{item.label}</span>
                           </label>
                         </li>
                       ))}

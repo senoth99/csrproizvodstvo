@@ -85,7 +85,7 @@ a:active {
   @apply disabled:cursor-not-allowed disabled:opacity-45;
 }
 
-input,
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
 select,
 textarea {
   @apply min-h-11 rounded-none border-0 border-b border-muted/40 bg-transparent px-0 py-2.5 text-[15px] leading-snug text-foreground outline-none ring-0 transition;
@@ -95,6 +95,10 @@ textarea {
 .input-time {
   @apply box-border min-h-11 w-full max-w-full appearance-none rounded-lg border border-solid border-border bg-background px-3 py-2 text-sm tabular-nums text-foreground outline-none ring-0;
   @apply focus:border-foreground disabled:cursor-not-allowed disabled:opacity-45;
+}
+
+.input-time-readonly {
+  @apply pointer-events-none cursor-default border-border/70 bg-foreground/[0.04] text-foreground/85;
 }
 
 @layer base {

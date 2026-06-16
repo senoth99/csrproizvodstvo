@@ -67,10 +67,11 @@ export function ReportTextEditor({
               <input
                 id={`edit-work-start-${reportId}`}
                 type="time"
-                className="input-time"
+                className="input-time input-time-readonly"
                 value={workStartTime}
-                onChange={(e) => setWorkStartTime(e.target.value)}
-                disabled={pending}
+                readOnly
+                tabIndex={-1}
+                aria-readonly="true"
               />
             </div>
             <div>
@@ -123,7 +124,7 @@ export function ReportTextEditor({
                     await updateMyShiftReport({
                       reportId,
                       text,
-                      workStartTime,
+                      workStartTime: savedWorkStart,
                       workEndTime
                     });
                     setSavedText(text);

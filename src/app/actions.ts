@@ -1203,7 +1203,14 @@ export async function updateMyShiftReport(input: unknown) {
   const data = updateReportSchema.parse(input);
   const report = await prisma.shiftReport.findUnique({
     where: { id: data.reportId },
-    select: { id: true, userId: true, status: true, shiftId: true, shift: { select: { weekStartDate: true, dayOfWeek: true } } }
+    select: {
+      id: true,
+      userId: true,
+      status: true,
+      shiftId: true,
+      workStartTime: true,
+      shift: { select: { weekStartDate: true, dayOfWeek: true } }
+    }
   });
   if (!report) throw new Error("Отчёт не найден.");
   if (report.userId !== user.id) throw new Error("Можно редактировать только свой отчёт.");
@@ -1214,12 +1221,16 @@ export async function updateMyShiftReport(input: unknown) {
   const updateData: Prisma.ShiftReportUpdateInput = { text: data.text.trim() };
   let workStartedAt: Date | undefined;
   let workEndedAt: Date | undefined;
-  if (data.workStartTime && data.workEndTime) {
-    const workedMinutes = computeWorkedMinutes(data.workStartTime, data.workEndTime);
-    updateData.workStartTime = data.workStartTime;
+  if (data.workStartTime && data.workStartTime !== report.workStartTime) {
+    throw new Error("Время начала работы нельзя изменить.");
+  }
+  if (data.workEndTime) {
+    const startTime = report.workStartTime ?? data.workStartTime;
+    if (!startTime) throw new Error("Не указано время начала работы.");
+    const workedMinutes = computeWorkedMinutes(startTime, data.workEndTime);
     updateData.workEndTime = data.workEndTime;
     updateData.workedMinutes = workedMinutes;
-    workStartedAt = toDateTime(report.shift.weekStartDate, report.shift.dayOfWeek, data.workStartTime);
+    workStartedAt = toDateTime(report.shift.weekStartDate, report.shift.dayOfWeek, startTime);
     workEndedAt = toDateTime(report.shift.weekStartDate, report.shift.dayOfWeek, data.workEndTime);
     if (workEndedAt.getTime() <= workStartedAt.getTime()) {
       workEndedAt = addDays(workEndedAt, 1);
