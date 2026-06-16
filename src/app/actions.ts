@@ -14,7 +14,6 @@ import {
   requireRole
 } from "@/lib/auth";
 import { BRIGADES } from "@/lib/brigades";
-import { isValidPhone, normalizePhoneInput } from "@/lib/formatPhone";
 import { isSuperAdminPhone, normalizePhone } from "@/lib/phoneAuth";
 import { assertTelegramUsernameFree } from "@/lib/telegramUsername";
 import { resolveUserAvatarUrl } from "@/lib/userAvatar";
