@@ -3,21 +3,40 @@ import { ReportStatusBadge } from "@/components/ReportStatusBadge";
 import { ReportsExcelDownload } from "@/components/ReportsExcelDownload";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import { getReports } from "@/app/actions";
 import { catchAuth, catchDb } from "@/lib/dbBoundary";
 import { requireAuth } from "@/lib/auth";
+import { UserRole } from "@/lib/enums";
+import { prisma } from "@/lib/prisma";
+import { prismaUserListNameSelect } from "@/lib/prismaSafeUserInclude";
 import { formatDateRu, isoFromWeekDay, weekDays } from "@/lib/utils";
 import { formatPhoneDisplay } from "@/lib/formatPhone";
 import { formatWorkedMinutes } from "@/lib/workedHours";
+
+const MAX_REPORTS_IN_LIST = 50;
+
+function userIsReportAdmin(actor: { role: string; isManager?: boolean | null }) {
+  return actor.role === UserRole.ADMIN || actor.role === UserRole.SUPER_ADMIN || Boolean(actor.isManager);
+}
 
 export default async function ReportsPage() {
   const authResult = await catchAuth(() => requireAuth());
   if (!authResult.ok) return <ServiceUnavailable scope="reports" />;
   const user = authResult.data;
-  const reportsResult = await catchDb("reports", () => getReports());
+  const isAdmin = userIsReportAdmin(user);
+  const reportsResult = await catchDb("reports", () =>
+    prisma.shiftReport.findMany({
+      where: isAdmin ? undefined : { userId: user.id },
+      include: {
+        user: { select: prismaUserListNameSelect },
+        shift: { include: { zone: true } },
+        acceptedBy: { select: prismaUserListNameSelect }
+      },
+      orderBy: { createdAt: "desc" },
+      take: MAX_REPORTS_IN_LIST
+    })
+  );
   if (!reportsResult.ok) return <ServiceUnavailable scope="reports" />;
   const reports = reportsResult.data;
-  const isAdmin = Boolean(user.isManager) || user.role === "ADMIN" || user.role === "SUPER_ADMIN";
 
   try {
     return (

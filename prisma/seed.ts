@@ -42,19 +42,29 @@ async function main() {
     );
   }
   const zones = await Promise.all([
-    prisma.zone.create({ data: { name: "Термопресс", sortOrder: 1 } }),
-    prisma.zone.create({ data: { name: "Плоттер и ДТФ", sortOrder: 2 } }),
-    prisma.zone.create({ data: { name: "Вырезальщик", sortOrder: 3 } }),
-    prisma.zone.create({ data: { name: "ЧПУ", sortOrder: 4 } })
+    prisma.zone.create({ data: { name: "Принтер+ДТФ", sortOrder: 1 } }),
+    prisma.zone.create({ data: { name: "Коландр + Плоттер", sortOrder: 2 } }),
+    prisma.zone.create({ data: { name: "ЧПУ", sortOrder: 3 } }),
+    prisma.zone.create({ data: { name: "Вырезашки", sortOrder: 4 } }),
+    prisma.zone.create({ data: { name: "Термопресс", sortOrder: 5 } }),
+    prisma.zone.create({ data: { name: "Комплектовка", sortOrder: 6 } }),
+    prisma.zone.create({ data: { name: "Склад", sortOrder: 7 } }),
+    prisma.zone.create({ data: { name: "Сотрудник склада", sortOrder: 8 } })
   ]);
-  await prisma.zoneLimit.createMany({
-    data: [
-      { zoneId: zones[0].id, dayOfWeek: null, startTime: "10:00", endTime: "18:00", maxEmployees: 4 },
-      { zoneId: zones[1].id, dayOfWeek: null, startTime: "10:00", endTime: "18:00", maxEmployees: 2 },
-      { zoneId: zones[2].id, dayOfWeek: null, startTime: "10:00", endTime: "18:00", maxEmployees: 2 },
-      { zoneId: zones[3].id, dayOfWeek: null, startTime: "10:00", endTime: "18:00", maxEmployees: 2 }
-    ]
-  });
+  const dayLimits = zones.flatMap((z) => [
+    { zoneId: z.id, dayOfWeek: null, startTime: "10:00", endTime: "18:00", maxEmployees: 4 }
+  ]);
+  const eveningZoneNames = new Set(["ЧПУ", "Вырезашки", "Термопресс", "Комплектовка"]);
+  const eveningLimits = zones
+    .filter((z) => eveningZoneNames.has(z.name))
+    .map((z) => ({
+      zoneId: z.id,
+      dayOfWeek: null,
+      startTime: "18:00",
+      endTime: "00:00",
+      maxEmployees: 4
+    }));
+  await prisma.zoneLimit.createMany({ data: [...dayLimits, ...eveningLimits] });
   const weekStartDate = getWeekStart();
   await prisma.scheduleWeek.create({ data: { weekStartDate } });
   const employees = users.filter((u) => u.role === UserRole.EMPLOYEE);

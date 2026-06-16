@@ -1,15 +1,13 @@
 import { randomBytes } from "node:crypto";
 import { resolveAppPublicBaseUrl } from "@/lib/appUrl";
+import { getCachedSystemSetting } from "@/lib/cache";
 import { prisma } from "@/lib/prisma";
 
 export const WORKPLACE_QR_TOKEN_KEY = "workplace_qr_token";
 
 /** Стабильный токен QR в SystemSettings; при отсутствии создаётся 32 hex-символа. */
 export async function getOrCreateWorkplaceQrToken(): Promise<string> {
-  const existing = await prisma.systemSettings.findUnique({
-    where: { key: WORKPLACE_QR_TOKEN_KEY },
-    select: { value: true }
-  });
+  const existing = await getCachedSystemSetting(WORKPLACE_QR_TOKEN_KEY);
   if (existing?.value?.trim()) return existing.value.trim();
 
   const token = randomBytes(16).toString("hex");

@@ -11,6 +11,7 @@ import { ShiftStatus } from "@/lib/enums";
 import { prisma } from "@/lib/prisma";
 import { prismaUserShiftBoardSelect } from "@/lib/prismaSafeUserInclude";
 import { addAppDays, formatDateRu, getAppISODay, getWeekStart, startOfAppDay, weekDays } from "@/lib/utils";
+import { resolveUserAvatarUrl } from "@/lib/userAvatar";
 
 export const dynamic = "force-dynamic";
 
@@ -72,7 +73,7 @@ export default async function ManagerPanelPage() {
         userId: row.user.id,
         name: row.user.name,
         color: row.user.color,
-        telegramPhotoUrl: row.user.telegramPhotoUrl ?? null,
+        telegramPhotoUrl: resolveUserAvatarUrl(row.user),
         arrivedAtIso: row.arrivedAt.toISOString(),
         arrivedAtLabel: formatDateRu(row.arrivedAt, "HH:mm")
       }))
@@ -97,7 +98,7 @@ export default async function ManagerPanelPage() {
             user: {
               name: s.user.name,
               color: s.user.color,
-              telegramPhotoUrl: s.user.telegramPhotoUrl ?? null
+              telegramPhotoUrl: resolveUserAvatarUrl(s.user)
             },
             arrivalLabel: latestArrivalByUser.get(s.user.id) ?? null
           }))
@@ -113,7 +114,10 @@ export default async function ManagerPanelPage() {
       if (existing) {
         existing.count += 1;
       } else {
-        likeCounts.set(row.toUser.id, { user: row.toUser, count: 1 });
+        likeCounts.set(row.toUser.id, {
+          user: { ...row.toUser, telegramPhotoUrl: resolveUserAvatarUrl(row.toUser) },
+          count: 1
+        });
       }
     }
   }

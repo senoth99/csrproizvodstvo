@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { AuthDbError, getCurrentUser } from "@/lib/auth";
 import { writeAuditLog } from "@/lib/audit";
-import { ShiftStatus } from "@/lib/enums";
+import { AppNotificationType, ShiftStatus } from "@/lib/enums";
 import { notifyAdminsShiftArrival } from "@/lib/notifyAdmins";
+import { notifyUser } from "@/lib/notifyDispatch";
 import { prisma } from "@/lib/prisma";
-import { findUserShiftToday } from "@/lib/todayShift";
+import { describeShiftBrief } from "@/lib/shiftBrief";
+import { canStartShiftViaQrToday, findUserShiftToday } from "@/lib/todayShift";
 import { getOrCreateWorkplaceQrToken } from "@/lib/workplaceQr";
 
 export async function POST(req: Request) {
@@ -37,11 +40,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "invalid_token" }, { status: 403 });
     }
 
-    const arrivedAt = new Date();
-    const existing = await prisma.workplaceArrival.findUnique({
-      where: { userId: user.id },
-      select: { id: true }
+    const todayShift = await findUserShiftToday(user.id);
+    if (!canStartShiftViaQrToday(todayShift)) {
+      return NextResponse.json({ error: "no_shift_today" }, { status: 403 });
+    }
+
+    const otherActive = await prisma.shift.count({
+      where: {
+        userId: user.id,
+        status: ShiftStatus.IN_PROGRESS,
+        id: { not: todayShift.id }
+      }
     });
+    if (otherActive > 0) {
+      return NextResponse.json({ error: "other_shift_active" }, { status: 409 });
+    }
+
+    const arrivedAt = new Date();
+    const zoneName = todayShift.zone.name;
 
     await prisma.workplaceArrival.upsert({
       where: { userId: user.id },
@@ -55,47 +71,38 @@ export async function POST(req: Request) {
 
     await notifyAdminsShiftArrival({ employeeName: user.name, arrivedAt });
 
-    let shiftStarted = false;
-    let shiftAlreadyInProgress = false;
-    let noShiftToday = false;
-    let zoneName: string | null = null;
+    await prisma.shift.update({
+      where: { id: todayShift.id },
+      data: { status: ShiftStatus.IN_PROGRESS, updatedById: user.id }
+    });
+    await prisma.shiftTimeLog.upsert({
+      where: { shiftId: todayShift.id },
+      create: { shiftId: todayShift.id, userId: user.id, startedAt: arrivedAt },
+      update: { startedAt: arrivedAt }
+    });
+    await writeAuditLog({
+      actorUserId: user.id,
+      action: "START_SHIFT",
+      entityType: "Shift",
+      entityId: todayShift.id,
+      payload: { source: "qr" }
+    });
 
-    const todayShift = await findUserShiftToday(user.id);
-    if (todayShift) {
-      zoneName = todayShift.zone.name;
-      if (todayShift.status === ShiftStatus.PLANNED) {
-        const otherActive = await prisma.shift.count({
-          where: {
-            userId: user.id,
-            status: ShiftStatus.IN_PROGRESS,
-            id: { not: todayShift.id }
-          }
+    after(async () => {
+      try {
+        const brief = describeShiftBrief(todayShift);
+        await notifyUser({
+          userId: user.id,
+          type: AppNotificationType.SHIFT_STARTED_BY_QR,
+          title: "Всё отлично!",
+          body: `Ваша смена начата: ${brief}.`,
+          pushUrl: "/me",
+          payload: { shiftId: todayShift.id, source: "qr" }
         });
-        if (otherActive === 0) {
-          await prisma.shift.update({
-            where: { id: todayShift.id },
-            data: { status: ShiftStatus.IN_PROGRESS, updatedById: user.id }
-          });
-          await prisma.shiftTimeLog.upsert({
-            where: { shiftId: todayShift.id },
-            create: { shiftId: todayShift.id, userId: user.id, startedAt: arrivedAt },
-            update: { startedAt: arrivedAt }
-          });
-          await writeAuditLog({
-            actorUserId: user.id,
-            action: "START_SHIFT",
-            entityType: "Shift",
-            entityId: todayShift.id,
-            payload: { source: "qr" }
-          });
-          shiftStarted = true;
-        }
-      } else if (todayShift.status === ShiftStatus.IN_PROGRESS) {
-        shiftAlreadyInProgress = true;
+      } catch (e) {
+        console.error("[api/workplace/check-in] shift started notify:", e);
       }
-    } else {
-      noShiftToday = true;
-    }
+    });
 
     revalidatePath("/manager");
     revalidatePath(`/manager/employees/${user.id}`);
@@ -104,11 +111,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      updated: Boolean(existing),
       arrivedAt: arrivedAt.toISOString(),
-      shiftStarted,
-      shiftAlreadyInProgress,
-      noShiftToday,
+      shiftStarted: true,
       zoneName
     });
   } catch (e) {

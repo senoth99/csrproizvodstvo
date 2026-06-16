@@ -11,6 +11,7 @@ export type BrigadeBoardShift = {
 
 export type ToggleBrigadeAssignmentResult =
   | { kind: "removed"; shiftId: string }
+  | { kind: "removal_requested"; shiftId: string }
   | { kind: "added"; shift: BrigadeBoardShift; removedShiftIds: string[] };
 
 export type ManagerAssignBrigadeResult =
@@ -25,6 +26,9 @@ export function applyToggleBrigadeResult(
 ): BrigadeBoardShift[] {
   if (result.kind === "removed") {
     return shifts.filter((s) => s.id !== result.shiftId);
+  }
+  if (result.kind === "removal_requested") {
+    return shifts;
   }
   const removed = new Set(result.removedShiftIds);
   return [...shifts.filter((s) => !removed.has(s.id)), result.shift];

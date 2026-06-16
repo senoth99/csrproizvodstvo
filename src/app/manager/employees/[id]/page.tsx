@@ -10,6 +10,7 @@ import { catchDb } from "@/lib/dbBoundary";
 import { prisma } from "@/lib/prisma";
 import { UserRole } from "@/lib/enums";
 import { formatDateRu } from "@/lib/utils";
+import { resolveUserAvatarUrl } from "@/lib/userAvatar";
 
 export default async function ManagerEmployeeDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireAuth();
@@ -27,6 +28,7 @@ export default async function ManagerEmployeeDetailPage({ params }: { params: Pr
         lastName: true,
         telegramUsername: true,
         telegramPhotoUrl: true,
+        avatarUpdatedAt: true,
         color: true,
         ndaSigned: true,
         phone: true
@@ -79,7 +81,7 @@ export default async function ManagerEmployeeDetailPage({ params }: { params: Pr
     firstName: row.firstName,
     lastName: row.lastName,
     telegramUsername: row.telegramUsername,
-    telegramPhotoUrl: row.telegramPhotoUrl,
+    telegramPhotoUrl: resolveUserAvatarUrl(row),
     color: row.color,
     ndaSigned: row.ndaSigned,
     phone: row.phone

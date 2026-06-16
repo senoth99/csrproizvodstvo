@@ -1,11 +1,14 @@
 .next
 node_modules
 .env
+.env.local
 dist
 coverage
 *.log
 # миграции нужны для deploy; старый sqlite-файл не коммитим
 prisma/dev.db
+prisma/dev.db-shm
+prisma/dev.db-wal
 prisma/*.db
 public/uploads/*
 !public/uploads/reports/

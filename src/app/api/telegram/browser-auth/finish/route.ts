@@ -22,34 +22,34 @@ export async function GET(req: Request) {
   const tokenRaw = url.searchParams.get("token") ?? "";
   const token = normalizeBrowserLoginToken(tokenRaw);
   if (!token) {
-    return NextResponse.redirect(new URL("/telegram/login?error=bad_token", appBase));
+    return NextResponse.redirect(new URL("/login?error=bad_token", appBase));
   }
 
   try {
     const result = await consumeBrowserLoginChallenge(token);
 
     if (result.kind === "waiting") {
-      return NextResponse.redirect(new URL("/telegram/login?error=not_ready", appBase));
+      return NextResponse.redirect(new URL("/login?error=not_ready", appBase));
     }
     if (result.kind === "expired") {
-      return NextResponse.redirect(new URL("/telegram/login?error=expired", appBase));
+      return NextResponse.redirect(new URL("/login?error=expired", appBase));
     }
     if (result.kind === "denied") {
       return NextResponse.redirect(new URL("/access-denied", appBase));
     }
     if (result.kind === "invalid_user") {
-      return NextResponse.redirect(new URL("/telegram/login?error=invalid_user", appBase));
+      return NextResponse.redirect(new URL("/login?error=invalid_user", appBase));
     }
     if (result.kind === "session_error") {
       if (result.response.status === 403) {
         return NextResponse.redirect(new URL("/access-denied", appBase));
       }
-      return NextResponse.redirect(new URL("/telegram/login?error=session", appBase));
+      return NextResponse.redirect(new URL("/login?error=session", appBase));
     }
 
     return redirectBrowserLoginSuccess(result.jwt, result.onboardingRequired);
   } catch (e) {
     console.error("[api/telegram/browser-auth/finish]", e);
-    return NextResponse.redirect(new URL("/telegram/login?error=server", appBase));
+    return NextResponse.redirect(new URL("/login?error=server", appBase));
   }
 }

@@ -7,7 +7,8 @@ import { ScheduleMonthTable } from "@/components/ScheduleMonthTable";
 import { ScheduleViewSwitch, type ScheduleView } from "@/components/ScheduleViewSwitch";
 import { ScheduleWeekTable } from "@/components/ScheduleWeekTable";
 import { WeekModeSwitch } from "@/components/WeekModeSwitch";
-import { canOpenManagerPanel } from "@/lib/managerPanel";
+import { canAssignShiftsToOthers, canRemoveShifts } from "@/lib/managerPanel";
+import { getCachedActiveEmployeesForSchedule } from "@/lib/cache";
 import { catchAuth, catchDb } from "@/lib/dbBoundary";
 import { ShiftStatus } from "@/lib/enums";
 import { prisma } from "@/lib/prisma";
@@ -21,6 +22,7 @@ import {
 } from "@/lib/scheduleTable";
 import { getCurrentAppMonth } from "@/lib/workedHours";
 import { addAppDays, getWeekStart } from "@/lib/utils";
+import { resolveUserAvatarUrl } from "@/lib/userAvatar";
 
 const scheduleUserSelect = {
   ...prismaUserShiftBoardSelect,
@@ -47,32 +49,40 @@ export default async function SchedulePage({
   const currentWeekStart = getWeekStart(new Date());
   const nextWeekStart = addAppDays(currentWeekStart, 7);
   const weekStartDate = weekMode === "next" ? nextWeekStart : currentWeekStart;
-  const canManageSchedule = canOpenManagerPanel(user);
+  const canManageSchedule = canAssignShiftsToOthers(user);
+  const canRemoveScheduleShifts = canRemoveShifts(user);
 
   const currentMonth = getCurrentAppMonth();
   const monthParsed = parseMonthParam(params.month) ?? { year: currentMonth.year, month: currentMonth.month };
   const monthMeta = getAppMonthMeta(monthParsed.year, monthParsed.month);
 
-  const loaded = await catchDb("schedule/shifts", async () => {
-    if (view === "month") {
-      const monthShifts = await prisma.shift.findMany({
-        where: {
-          weekStartDate: { in: monthMeta.weekStarts },
-          status: { not: ShiftStatus.CANCELLED }
-        },
-        include: { user: { select: scheduleUserSelect }, zone: true },
-        orderBy: [{ weekStartDate: "asc" }, { dayOfWeek: "asc" }, { startTime: "asc" }]
-      });
-      return { weekShifts: [], monthShifts };
-    }
+  const needEmployees = canManageSchedule && view === "brigades";
 
-    const weekShifts = await prisma.shift.findMany({
-      where: { weekStartDate, status: { not: ShiftStatus.CANCELLED } },
-      include: { user: { select: scheduleUserSelect }, zone: true },
-      orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }]
-    });
-    return { weekShifts, monthShifts: [] as typeof weekShifts };
-  });
+  const [loaded, employeesLoaded] = await Promise.all([
+    catchDb("schedule/shifts", async () => {
+      if (view === "month") {
+        const monthShifts = await prisma.shift.findMany({
+          where: {
+            weekStartDate: { in: monthMeta.weekStarts },
+            status: { not: ShiftStatus.CANCELLED }
+          },
+          include: { user: { select: scheduleUserSelect }, zone: true },
+          orderBy: [{ weekStartDate: "asc" }, { dayOfWeek: "asc" }, { startTime: "asc" }]
+        });
+        return { weekShifts: [], monthShifts };
+      }
+
+      const weekShifts = await prisma.shift.findMany({
+        where: { weekStartDate, status: { not: ShiftStatus.CANCELLED } },
+        include: { user: { select: scheduleUserSelect }, zone: true },
+        orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }]
+      });
+      return { weekShifts, monthShifts: [] as typeof weekShifts };
+    }),
+    needEmployees
+      ? catchDb("schedule/employees", () => getCachedActiveEmployeesForSchedule())
+      : Promise.resolve({ ok: true as const, data: [] as Awaited<ReturnType<typeof getCachedActiveEmployeesForSchedule>> })
+  ]);
 
   if (!loaded.ok) return <ServiceUnavailable scope="schedule/shifts" />;
 
@@ -82,25 +92,13 @@ export default async function SchedulePage({
     color: string;
     telegramPhotoUrl: string | null;
   }[] = [];
-  if (canManageSchedule && view === "brigades") {
-    const employeesLoaded = await catchDb("schedule/employees", () =>
-      prisma.user.findMany({
-        where: { isActive: true },
-        orderBy: { name: "asc" },
-        select: {
-          id: true,
-          name: true,
-          color: true,
-          telegramPhotoUrl: true
-        }
-      })
-    );
+  if (needEmployees) {
     if (!employeesLoaded.ok) return <ServiceUnavailable scope="schedule/employees" />;
     assignableEmployees = employeesLoaded.data.map((u) => ({
       id: u.id,
       name: u.name,
       color: u.color,
-      telegramPhotoUrl: u.telegramPhotoUrl ?? null
+      telegramPhotoUrl: resolveUserAvatarUrl(u)
     }));
   }
 
@@ -126,7 +124,7 @@ export default async function SchedulePage({
           id: s.user!.id,
           name: s.user!.name,
           color: s.user!.color,
-          telegramPhotoUrl: s.user!.telegramPhotoUrl ?? null
+          telegramPhotoUrl: resolveUserAvatarUrl(s.user!)
         }
       }));
 
@@ -172,6 +170,7 @@ export default async function SchedulePage({
               weekStartDateIso={weekStartDate.toISOString()}
               weekMode={weekMode}
               canManageSchedule={canManageSchedule}
+              canRemoveShifts={canRemoveScheduleShifts}
               assignableEmployees={assignableEmployees}
             />
           </>

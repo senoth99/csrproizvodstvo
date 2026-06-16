@@ -110,7 +110,7 @@ export function NotificationBell() {
     void load();
     const iv = window.setInterval(() => {
       if (document.visibilityState === "visible") void load();
-    }, 90_000);
+    }, 300_000);
     return () => window.clearInterval(iv);
   }, [load]);
 

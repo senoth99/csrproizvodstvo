@@ -3,14 +3,15 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Pencil } from "lucide-react";
+import { AvatarUploadControl } from "@/components/AvatarUploadControl";
 import { updateMyProfile } from "@/app/actions";
-import { UserAvatar } from "@/components/UserAvatar";
 import { formatPhoneDisplay } from "@/lib/formatPhone";
 
 export function MeProfileCard({
   displayName,
   telegramUsername,
-  telegramPhotoUrl,
+  photoUrl,
+  hasCustomAvatar,
   accentColor,
   initialFirstName,
   initialLastName,
@@ -18,7 +19,8 @@ export function MeProfileCard({
 }: {
   displayName: string;
   telegramUsername: string;
-  telegramPhotoUrl: string | null;
+  photoUrl: string | null;
+  hasCustomAvatar: boolean;
   accentColor: string;
   initialFirstName: string;
   initialLastName: string;
@@ -39,7 +41,13 @@ export function MeProfileCard({
   return (
     <div className="mt-1 bg-background px-4 pt-2.5 pb-3">
       <div className="flex items-start gap-2.5">
-        <UserAvatar name={displayName} photoUrl={telegramPhotoUrl} color={accentColor} size="lg" />
+        <AvatarUploadControl
+          name={displayName}
+          photoUrl={photoUrl}
+          accentColor={accentColor}
+          hasCustomAvatar={hasCustomAvatar}
+          onChanged={() => router.refresh()}
+        />
         <div className="min-w-0 flex-1 pt-0.5">
           <div className="flex items-start gap-1.5">
             <div className="min-w-0 flex-1">

@@ -11,7 +11,8 @@ export const prismaUserShiftBoardSelect = {
   id: true,
   name: true,
   color: true,
-  telegramPhotoUrl: true
+  telegramPhotoUrl: true,
+  avatarUpdatedAt: true
 } as const;
 
 export const prismaUserListNameSelect = { id: true, name: true, phone: true } as const;
@@ -26,6 +27,7 @@ export const prismaUserSessionSelect = {
   telegramId: true,
   telegramUsername: true,
   telegramPhotoUrl: true,
+  avatarUpdatedAt: true,
   profileCompleted: true,
   ndaSigned: true,
   role: true,
@@ -33,6 +35,8 @@ export const prismaUserSessionSelect = {
   isActive: true,
   color: true,
   payoutDebtCents: true,
+  approvalStatus: true,
+  passwordHash: true,
   createdAt: true,
   updatedAt: true
 } as const;
@@ -47,6 +51,7 @@ export const prismaUserSessionSelectLegacy = {
   telegramId: true,
   telegramUsername: true,
   telegramPhotoUrl: true,
+  avatarUpdatedAt: true,
   profileCompleted: true,
   ndaSigned: true,
   role: true,
@@ -66,6 +71,7 @@ export type PrismaUserSessionRow = {
   telegramId: string | null;
   telegramUsername: string | null;
   telegramPhotoUrl: string | null;
+  avatarUpdatedAt: Date | null;
   profileCompleted: boolean;
   ndaSigned: boolean;
   role: string;
@@ -73,6 +79,8 @@ export type PrismaUserSessionRow = {
   isActive: boolean;
   color: string;
   payoutDebtCents: number;
+  approvalStatus: string;
+  passwordHash: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -92,7 +100,13 @@ export async function findSessionUserByIdSafe(userId: string): Promise<PrismaUse
         select: prismaUserSessionSelectLegacy
       });
       if (!user || !user.isActive) return null;
-      return { ...user, payoutDebtCents: 0 };
+      return {
+        ...user,
+        payoutDebtCents: 0,
+        approvalStatus: "APPROVED",
+        passwordHash: null,
+        avatarUpdatedAt: null
+      };
     } catch {
       throw firstError;
     }

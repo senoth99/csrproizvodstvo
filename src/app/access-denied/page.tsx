@@ -31,7 +31,7 @@ export default function AccessDeniedPage() {
             )}
           </p>
           <p className="pt-2">
-            <Link href="/telegram/login" className="link-tech text-sm">
+            <Link href="/login" className="link-tech text-sm">
               Войти через сайт
             </Link>
           </p>

@@ -7,9 +7,6 @@ import { canOpenManagerPanel } from "@/lib/managerPanel";
 
 import "./globals.css";
 
-/** Сессия и cookies только на запрос — избегаем нестыковок при пререндере/кеше. */
-export const dynamic = "force-dynamic";
-
 export const metadata: Metadata = {
   title: "Производственный график",
   description: "Система графиков и отчетности сотрудников",

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Boxes, Cpu, Flame, Scissors, Shirt } from "lucide-react";
+import { Boxes, Cpu, Flame, Package, Scissors, Shirt } from "lucide-react";
 import { BrigadeModeTabs } from "@/components/BrigadeModeTabs";
 import type { BrigadeConfig, BrigadeShiftLabel } from "@/lib/brigades";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -12,7 +12,8 @@ const iconMap = {
   printer: Shirt,
   scissors: Scissors,
   cpu: Cpu,
-  warehouse: Boxes
+  warehouse: Boxes,
+  pack: Package
 } as const;
 
 export type ManagerTodayShift = {

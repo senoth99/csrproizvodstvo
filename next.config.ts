@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["@prisma/client", "exceljs"],
+  serverExternalPackages: ["@prisma/client", "exceljs", "web-push"],
   webpack: (config, { dev }) => {
     if (dev) {
       // Файловый pack-cache давал ENOENT; `false` иногда режет связку CSS+HMR — memory стабильнее для стилей.
@@ -16,9 +16,13 @@ const nextConfig: NextConfig = {
     return config;
   },
   experimental: {
-    optimizePackageImports: ["lucide-react"],
+    optimizePackageImports: ["lucide-react", "date-fns", "date-fns-tz"],
     serverActions: {
       bodySizeLimit: "2mb"
+    },
+    staleTimes: {
+      dynamic: 30,
+      static: 180
     }
   },
   images: {

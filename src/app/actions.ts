@@ -15,6 +15,8 @@ import {
 } from "@/lib/auth";
 import { BRIGADES } from "@/lib/brigades";
 import { isValidPhone, normalizePhoneInput } from "@/lib/formatPhone";
+import { isSuperAdminPhone, normalizePhone } from "@/lib/phoneAuth";
+import { resolveUserAvatarUrl } from "@/lib/userAvatar";
 import { prisma } from "@/lib/prisma";
 import { reportSchema, shiftSchema, updateReportSchema, updateShiftSchema, updateZoneChecklistItemSchema, userSchema, zoneChecklistItemSchema, zoneLimitSchema, zoneSchema, profileNamesPhoneSchema } from "@/lib/validation";
 import { resolveAppPublicBaseUrl } from "@/lib/appUrl";
@@ -26,11 +28,12 @@ import {
   ShiftStatus,
   UserRole
 } from "@/lib/enums";
-import { canOpenManagerPanel } from "@/lib/managerPanel";
+import { canAssignShiftsToOthers, canOpenManagerPanel, canRemoveShifts } from "@/lib/managerPanel";
 import { notifyUserAppAndTelegram } from "@/lib/notifyDispatch";
 import {
   notifyAdminRoleUsers,
   notifyAdminsEmployeeShiftChange,
+  notifyAdminsShiftRemovalRequest,
   notifyAdminsShiftReportSubmitted,
   notifyScheduleAdmins
 } from "@/lib/notifyAdmins";
@@ -241,6 +244,14 @@ export async function updateUser(id: string, input: unknown) {
   const target = await prisma.user.findUnique({ where: { id } });
   if (!target) throw new Error("Пользователь не найден.");
   const data = userSchema.partial().parse(input);
+  if (isSuperAdminPhone(target.phone ?? "")) {
+    if (data.role && data.role !== UserRole.SUPER_ADMIN) {
+      throw new Error("Нельзя изменить роль суперадмина.");
+    }
+    if (data.isActive === false) {
+      throw new Error("Нельзя деактивировать суперадмина.");
+    }
+  }
   if (actor.role !== UserRole.SUPER_ADMIN) {
     if (target.role === UserRole.SUPER_ADMIN) {
       throw new Error("Изменять суперадмина может только суперадмин.");
@@ -373,6 +384,17 @@ export async function toggleBrigadeAssignment(input: {
   const end = endAt(start, brigade.startTime, brigade.endTime);
 
   if (existingSameCell) {
+    if (!canRemoveShifts(actor)) {
+      const removedBrief = describeShiftBrief(existingSameCell);
+      await notifyAdminsShiftRemovalRequest({
+        employeeName: actor.name,
+        brief: removedBrief,
+        shiftId: existingSameCell.id,
+        userId: actor.id
+      });
+      revalidatePath("/schedule");
+      return { kind: "removal_requested", shiftId: existingSameCell.id };
+    }
     await assertCanEditBy24h(actor.role, start);
     const removedBrief = describeShiftBrief(existingSameCell);
     await prisma.shift.delete({ where: { id: existingSameCell.id } });
@@ -464,7 +486,7 @@ export async function toggleBrigadeAssignment(input: {
       id: actor.id,
       name: actor.name,
       color: actor.color,
-      telegramPhotoUrl: actor.telegramPhotoUrl ?? null
+      telegramPhotoUrl: resolveUserAvatarUrl(actor)
     }
   };
   return {
@@ -474,10 +496,10 @@ export async function toggleBrigadeAssignment(input: {
   };
 }
 
-/** Назначение смены сотруднику с графика: суперадмин или руководитель (флаг isManager). */
+/** Назначение смены другому сотруднику на графике — ADMIN и SUPER_ADMIN. */
 export async function managerAssignBrigadeShift(input: unknown): Promise<ManagerAssignBrigadeResult> {
   const actor = await requireAuth();
-  if (!canOpenManagerPanel(actor)) throw new Error("Недостаточно прав.");
+  if (!canAssignShiftsToOthers(actor)) throw new Error("Назначать смены другим может только администратор.");
   const data = managerBrigadeAssignSchema.parse(input);
   const brigade = BRIGADES.find((b) => b.id === data.brigadeId);
   if (!brigade) throw new Error("Бригада не найдена");
@@ -488,7 +510,7 @@ export async function managerAssignBrigadeShift(input: unknown): Promise<Manager
 
   const target = await prisma.user.findUnique({
     where: { id: data.userId },
-    select: { id: true, name: true, color: true, telegramPhotoUrl: true, isActive: true }
+    select: { id: true, name: true, color: true, telegramPhotoUrl: true, avatarUpdatedAt: true, isActive: true }
   });
   if (!target?.isActive) throw new Error("Пользователь не найден или не активен.");
 
@@ -569,7 +591,6 @@ export async function managerAssignBrigadeShift(input: unknown): Promise<Manager
           type: AppNotificationType.SHIFT_REMOVED_BY_EMPLOYEE,
           title: "Смена снята с графика",
           body: `${actor.name} снял смену с ${target.name}: ${removedBrief}.`,
-          telegramText: `📅 ${actor.name} снял смену — ${target.name}:\n${removedBrief}`,
           payload: { shiftId: replaced.id, userId: target.id, replacedByManagerAssign: true },
           excludeUserIds: [target.id]
         });
@@ -583,9 +604,7 @@ export async function managerAssignBrigadeShift(input: unknown): Promise<Manager
           ? `Вы записали себя в график: ${brief}.`
           : `${actor.name} записал вас в график: ${brief}.`,
         payload: { shiftId: shift.id, selfAssigned },
-        telegramText: selfAssigned
-          ? `📅 Вы назначили себе смену:\n${brief}`
-          : `📅 Вам назначили смену (${actor.name}):\n${brief}`
+        pushUrl: "/schedule"
       });
 
       await notifyScheduleAdmins({
@@ -594,9 +613,6 @@ export async function managerAssignBrigadeShift(input: unknown): Promise<Manager
         body: selfAssigned
           ? `${target.name} записался в график: ${brief}.`
           : `${actor.name} назначил ${target.name}: ${brief}.`,
-        telegramText: selfAssigned
-          ? `📅 ${target.name} записался на смену:\n${brief}`
-          : `📅 ${actor.name} назначил смену — ${target.name}:\n${brief}`,
         payload: { shiftId: shift.id, userId: target.id, byManagerId: actor.id, selfAssigned },
         excludeUserIds: [target.id]
       });
@@ -621,7 +637,7 @@ export async function managerAssignBrigadeShift(input: unknown): Promise<Manager
         id: target.id,
         name: target.name,
         color: target.color,
-        telegramPhotoUrl: target.telegramPhotoUrl ?? null
+        telegramPhotoUrl: resolveUserAvatarUrl(target)
       }
     },
     removedShiftIds: shiftsReplaced.map((s) => s.id)
@@ -630,7 +646,7 @@ export async function managerAssignBrigadeShift(input: unknown): Promise<Manager
 
 export async function managerRemoveShift(shiftId: string): Promise<ManagerRemoveShiftResult> {
   const actor = await requireAuth();
-  if (!canOpenManagerPanel(actor)) throw new Error("Недостаточно прав.");
+  if (!canRemoveShifts(actor)) throw new Error("Снять смену может только администратор.");
   const shift = await prisma.shift.findUnique({
     where: { id: shiftId },
     include: { zone: true, user: { select: { id: true, name: true } } }
@@ -669,10 +685,6 @@ export async function managerRemoveShift(shiftId: string): Promise<ManagerRemove
           targetUserId === actor.id
             ? `${actor.name} снял свою смену: ${brief}.`
             : `${actor.name} снял смену с ${targetName}: ${brief}.`,
-        telegramText:
-          targetUserId === actor.id
-            ? `📅 ${actor.name} снял смену:\n${brief}`
-            : `📅 ${actor.name} снял смену — ${targetName}:\n${brief}`,
         payload: { shiftId, userId: targetUserId, byManagerId: actor.id },
         excludeUserIds: targetUserId !== actor.id ? [targetUserId] : [actor.id]
       });
@@ -685,6 +697,29 @@ export async function managerRemoveShift(shiftId: string): Promise<ManagerRemove
   revalidatePath("/me");
   revalidatePath("/");
   return { kind: "removed", shiftId };
+}
+
+/** Запрос снять свою смену (сотрудник) — уведомление ADMIN и SUPER_ADMIN. */
+export async function requestShiftRemoval(shiftId: string) {
+  const actor = await requireAuth();
+  if (canRemoveShifts(actor)) {
+    throw new Error("Снимите смену напрямую из графика.");
+  }
+  const shift = await prisma.shift.findUnique({
+    where: { id: shiftId },
+    include: { zone: true }
+  });
+  if (!shift || shift.userId !== actor.id) throw new Error("Смена не найдена.");
+  if (shift.status === ShiftStatus.CANCELLED) throw new Error("Смена уже отменена.");
+
+  await notifyAdminsShiftRemovalRequest({
+    employeeName: actor.name,
+    brief: describeShiftBrief(shift),
+    shiftId,
+    userId: actor.id
+  });
+  revalidatePath("/schedule");
+  return { ok: true as const };
 }
 
 export async function updateEmployeeNdaSigned(input: unknown) {
@@ -853,8 +888,10 @@ export async function updateShift(input: unknown, forceOverride = false) {
 
 export async function cancelShift(id: string) {
   const actor = await requireAuth();
+  if (!canRemoveShifts(actor)) {
+    throw new Error("Снять смену может только администратор.");
+  }
   const shift = await prisma.shift.findUniqueOrThrow({ where: { id } });
-  if (actor.role === UserRole.EMPLOYEE && shift.userId !== actor.id) throw new Error("Можно отменять только свои смены.");
   const start = toDateTime(shift.weekStartDate, shift.dayOfWeek, shift.startTime);
   await assertCanEditBy24h(actor.role, start);
   await prisma.shift.update({ where: { id }, data: { status: ShiftStatus.CANCELLED, updatedById: actor.id } });
@@ -951,7 +988,7 @@ export async function getShiftCoworkersForLike(shiftId: string) {
     },
     select: {
       user: {
-        select: { id: true, name: true, color: true, telegramPhotoUrl: true }
+        select: { id: true, name: true, color: true, telegramPhotoUrl: true, avatarUpdatedAt: true }
       }
     },
     orderBy: { user: { name: "asc" } }
@@ -964,7 +1001,11 @@ export async function getShiftCoworkersForLike(shiftId: string) {
       if (seen.has(u.id)) return false;
       seen.add(u.id);
       return true;
-    });
+    })
+    .map((u) => ({
+      ...u,
+      telegramPhotoUrl: resolveUserAvatarUrl(u)
+    }));
 }
 
 export async function submitShiftReport(input: unknown) {
@@ -1356,7 +1397,7 @@ export async function updateMyProfile(input: unknown) {
     data: {
       firstName: data.firstName,
       lastName: data.lastName,
-      phone: data.phone,
+      phone: normalizePhone(data.phone),
       name: displayName,
       profileCompleted: true
     }
@@ -1375,7 +1416,7 @@ export async function completeWelcomeProfile(input: unknown) {
     data: {
       firstName: data.firstName,
       lastName: data.lastName,
-      phone: data.phone,
+      phone: normalizePhone(data.phone),
       name: displayName,
       profileCompleted: true
     }
@@ -1728,4 +1769,71 @@ export async function deleteZoneChecklistItem(id: string) {
     entityId: id
   });
   revalidatePath("/admin/checklists");
+}
+
+export async function approveUserRegistration(userId: string) {
+  const actor = await requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]);
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, phone: true, approvalStatus: true, isActive: true }
+  });
+  if (!user || !user.isActive) throw new Error("Пользователь не найден.");
+  if (user.approvalStatus !== "PENDING") throw new Error("Регистрация уже обработана.");
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { approvalStatus: "APPROVED" }
+  });
+
+  await notifyUserAppAndTelegram({
+    userId,
+    type: AppNotificationType.USER_REGISTRATION_APPROVED,
+    title: "Регистрация одобрена",
+    body: "Администратор одобрил вашу регистрацию. Можно пользоваться приложением.",
+    pushUrl: "/schedule"
+  });
+
+  await writeAuditLog({
+    actorUserId: actor.id,
+    action: "APPROVE_USER_REGISTRATION",
+    entityType: "User",
+    entityId: userId,
+    payload: { name: user.name }
+  });
+
+  revalidatePath("/admin/users");
+}
+
+export async function rejectUserRegistration(userId: string) {
+  const actor = await requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]);
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, phone: true, approvalStatus: true }
+  });
+  if (!user) throw new Error("Пользователь не найден.");
+  if (isSuperAdminPhone(user.phone ?? "")) throw new Error("Нельзя отклонить регистрацию суперадмина.");
+  if (user.approvalStatus !== "PENDING") throw new Error("Регистрация уже обработана.");
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { approvalStatus: "REJECTED", isActive: false }
+  });
+
+  await notifyUserAppAndTelegram({
+    userId,
+    type: AppNotificationType.USER_REGISTRATION_REJECTED,
+    title: "Регистрация отклонена",
+    body: "Администратор отклонил вашу регистрацию. Обратитесь к руководителю.",
+    pushUrl: "/access-denied"
+  });
+
+  await writeAuditLog({
+    actorUserId: actor.id,
+    action: "REJECT_USER_REGISTRATION",
+    entityType: "User",
+    entityId: userId,
+    payload: { name: user.name }
+  });
+
+  revalidatePath("/admin/users");
 }

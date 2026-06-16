@@ -12,11 +12,15 @@ model User {
   name           String
   firstName      String?
   lastName       String?
-  /// Контактный телефон (заполняет сотрудник при онбординге).
-  phone          String?
+  /// Контактный телефон (нормализованные цифры, напр. 79991234567).
+  phone          String?       @unique
+  passwordHash   String?
+  approvalStatus String        @default("APPROVED") // PENDING | APPROVED | REJECTED
   telegramId     String?       @unique
   telegramUsername String?
   telegramPhotoUrl String?
+  /// Пользователь загрузил свой аватар (файл + timestamp для cache-bust URL).
+  avatarUpdatedAt DateTime?
   profileCompleted Boolean       @default(false)
   /// Подписание NDA (карточка сотрудника в панели руководителя).
   ndaSigned      Boolean       @default(false)
@@ -41,6 +45,20 @@ model User {
   workplaceArrivalLogs WorkplaceArrivalLog[]
   peerLikesGiven     ShiftPeerLike[] @relation("ShiftPeerLikeFrom")
   peerLikesReceived  ShiftPeerLike[] @relation("ShiftPeerLikeTo")
+  pushSubscriptions  PushSubscription[]
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, endpoint])
 }
 
 /// Последняя отметка прихода на производство (QR); повторный скан обновляет `arrivedAt`.

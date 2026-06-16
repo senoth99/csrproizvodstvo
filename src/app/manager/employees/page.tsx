@@ -9,6 +9,7 @@ import { catchDb } from "@/lib/dbBoundary";
 import { prisma } from "@/lib/prisma";
 import { UserRole } from "@/lib/enums";
 import { ensureManagerDemoEmployeesIfEmpty } from "@/lib/managerDemoEmployees";
+import { resolveUserAvatarUrl } from "@/lib/userAvatar";
 
 function normalizedTelegramSuperUsername(): string {
   return (process.env.TELEGRAM_ADMIN_USERNAME ?? "").trim().toLowerCase().replace(/^@/, "");
@@ -40,6 +41,7 @@ export default async function ManagerEmployeesPage() {
           isActive: true,
           isManager: true,
           telegramPhotoUrl: true,
+          avatarUpdatedAt: true,
           color: true,
           ndaSigned: true,
           phone: true
@@ -86,7 +88,7 @@ export default async function ManagerEmployeesPage() {
             name: u.name,
             isActive: u.isActive,
             isManager: u.isManager,
-            photoUrl: u.telegramPhotoUrl,
+            photoUrl: resolveUserAvatarUrl(u),
             color: u.color,
             ndaSigned: u.ndaSigned,
             phone: u.phone

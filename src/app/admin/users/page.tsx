@@ -1,5 +1,6 @@
 import { getMonthlyWorkedMinutesByUser, revokeAccessToken } from "@/app/actions";
 import { AdminAccessTokenActions } from "@/components/AdminAccessTokenActions";
+import { PendingApprovalsPanel } from "@/components/PendingApprovalsPanel";
 import { RoleBadge } from "@/components/RoleBadge";
 import { UserForm } from "@/components/UserForm";
 import { ServiceUnavailable } from "@/components/ServiceUnavailable";
@@ -14,20 +15,33 @@ export default async function AdminUsersPage() {
   await requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]);
   const monthLabel = getCurrentAppMonth().label;
   const wrapped = await catchDb("admin/users", async () => {
-    const [users, workedMap] = await Promise.all([
+    const [users, workedMap, pendingUsers] = await Promise.all([
       prisma.user.findMany({ include: { accessTokens: true }, orderBy: { createdAt: "desc" } }),
-      getMonthlyWorkedMinutesByUser()
+      getMonthlyWorkedMinutesByUser(),
+      prisma.user.findMany({
+        where: { approvalStatus: "PENDING", isActive: true },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, name: true, phone: true, createdAt: true }
+      })
     ]);
-    return { users, workedMap };
+    return { users, workedMap, pendingUsers };
   });
   if (!wrapped.ok) return <ServiceUnavailable scope="admin/users" />;
-  const { users, workedMap } = wrapped.data;
+  const { users, workedMap, pendingUsers } = wrapped.data;
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-bold">Пользователи</h1>
         <p className="text-sm text-muted capitalize">Отработано за {monthLabel}</p>
       </div>
+      <PendingApprovalsPanel
+        users={pendingUsers.map((u) => ({
+          id: u.id,
+          name: u.name,
+          phone: u.phone,
+          createdAt: u.createdAt.toISOString()
+        }))}
+      />
       <UserForm />
       {users.map((u) => (
         <div key={u.id} className="card flex flex-wrap items-center gap-2">

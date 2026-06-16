@@ -5,6 +5,7 @@
  * (`child_process` → «module not found», `import("node:…")` → UnhandledSchemeError) — это давало сырой 500.
  *
  * Синхронизация SQLite: `npm run db:push`, `./scripts/dev.sh` или `npm run dev:fresh`.
+ * DB warmup: `src/lib/dbWarmup.ts` (WAL PRAGMA уже в `src/lib/prisma.ts` при первом import).
  */
 export async function register() {
   if (process.env.NEXT_RUNTIME === "edge") return;
@@ -19,4 +20,6 @@ export async function register() {
   } catch (e) {
     console.error("[instrumentation] register error", e);
   }
+
+  // DB warmup: см. src/lib/dbWarmup.ts — прямой import prisma здесь ломает bundler instrumentation (fs/path).
 }

@@ -9,6 +9,9 @@ const STATIC_FILE_EXT =
 
 /** /api/* не проходит matcher — сюда только страницы без сессии. */
 const PUBLIC_PATHS = [
+  "/login",
+  "/register",
+  "/pending-approval",
   "/login/token",
   "/need-link",
   "/access-denied",

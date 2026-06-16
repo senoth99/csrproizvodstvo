@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { SquarePen } from "lucide-react";
 import { BottomNav } from "@/components/BottomNav";
 import { NotificationBell } from "@/components/NotificationBell";
+import { PushNotificationSetup } from "@/components/PushNotificationSetup";
 import { SwipePageSwitch } from "@/components/SwipePageSwitch";
 import { cn } from "@/lib/utils";
 import { BRAND_LOGO_SRC } from "@/lib/brandLogo";
@@ -23,10 +24,16 @@ export function AppShell({
   authenticated: boolean;
 }) {
   const pathname = usePathname() ?? "";
-  const hideAppChrome = pathname === "/telegram/login" || pathname === "/access-denied";
+  const hideAppChrome =
+    pathname === "/login" ||
+    pathname === "/register" ||
+    pathname === "/pending-approval" ||
+    pathname === "/telegram/login" ||
+    pathname === "/access-denied";
 
   return (
     <>
+      {authenticated ? <PushNotificationSetup /> : null}
       {!hideAppChrome ? (
         <header className="sticky top-0 z-[110] border-b border-border bg-black backdrop-blur-[2px]">
           <div className="mx-auto grid max-w-5xl grid-cols-3 items-center px-3 py-2.5">

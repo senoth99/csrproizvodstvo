@@ -138,7 +138,7 @@ export async function POST(req: Request) {
       const handled = await handleLoginMessage(msg);
       if (!handled) {
         if (/^\/start(?:@\w+)?$/i.test(text)) {
-          const loginUrl = `${resolveAppPublicBaseUrl()}/telegram/login`;
+          const loginUrl = `${resolveAppPublicBaseUrl()}/login`;
           await telegramSendMessage(
             msg.chat.id,
             `Вход с сайта: откройте ${loginUrl} и нажмите «Открыть бота в Telegram». Обычный /start в чате вход не включает.`

@@ -11,7 +11,7 @@ export default async function WelcomePage() {
     if (e instanceof AuthDbError) return <ServiceUnavailable scope="welcome" />;
     throw e;
   }
-  if (!user) redirect("/telegram/login");
+  if (!user) redirect("/login");
   if (isProfileReady(user)) redirect("/schedule");
 
   return (

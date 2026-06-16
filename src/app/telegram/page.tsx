@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-/** Совместимость с короткой ссылкой /telegram без /login — иначе 404 и лишний стресс при отладке. */
+/** Совместимость с короткой ссылкой /telegram — ведём на основной вход. */
 export default function TelegramEntryRedirectPage() {
-  redirect("/telegram/login");
+  redirect("/login");
 }

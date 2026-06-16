@@ -9,9 +9,22 @@ import { UserRole, type UserRole as UserRoleValue } from "./enums";
 import { isNextHttpAccessFallbackError, isNextRedirectError } from "./dbBoundary";
 import { sessionSecretBytes } from "./sessionSecret";
 import { sessionCookieSecure } from "./sessionCookie";
+import { shouldSkipApprovalCheck } from "./testMode";
+import { normalizePhone } from "./phoneAuth";
 
-const COOKIE_NAME = "ps_session";
+export const COOKIE_NAME = "ps_session";
 export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
+
+export async function clearSessionCookie() {
+  const cookieStore = await cookies();
+  cookieStore.set(COOKIE_NAME, "", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: sessionCookieSecure(),
+    path: "/",
+    maxAge: 0
+  });
+}
 
 export function isProfileReady(user: { profileCompleted: boolean; phone?: string | null }) {
   return user.profileCompleted && Boolean(user.phone?.trim());
@@ -36,6 +49,8 @@ export type SessionPayload = {
   /** уже lower-case, может быть "" */
   telegramUsername: string;
   name: string;
+  /** нормализованный телефон (цифры) или "" */
+  phone?: string;
 };
 
 /** Мини-пользователь только для корневого layout (шапка / навигация). */
@@ -55,18 +70,21 @@ export function buildSessionPayload(user: {
   profileCompleted: boolean;
   telegramUsername: string | null;
   name: string;
+  phone?: string | null;
 }): SessionPayload {
   const role =
     user.role === UserRole.SUPER_ADMIN || user.role === UserRole.ADMIN || user.role === UserRole.EMPLOYEE
       ? (user.role as UserRoleValue)
       : UserRole.EMPLOYEE;
+  const phoneNorm = user.phone?.trim() ? normalizePhone(user.phone) : "";
   return {
     userId: user.id,
     role,
     isManager: Boolean(user.isManager),
     profileCompleted: Boolean(user.profileCompleted),
     telegramUsername: (user.telegramUsername ?? "").trim().toLowerCase(),
-    name: user.name
+    name: user.name,
+    ...(phoneNorm ? { phone: phoneNorm } : {})
   };
 }
 
@@ -212,6 +230,7 @@ export async function refreshSessionCookieForUserId(userId: string) {
         profileCompleted: true,
         telegramUsername: true,
         name: true,
+        phone: true,
         isActive: true
       }
     });
@@ -244,10 +263,18 @@ export async function getCurrentUser() {
   }
 }
 
+async function assertUserApproval(user: { approvalStatus?: string | null }) {
+  if (shouldSkipApprovalCheck()) return;
+  const status = user.approvalStatus ?? "APPROVED";
+  if (status === "PENDING") redirect("/pending-approval");
+  if (status === "REJECTED") redirect("/access-denied");
+}
+
 export async function requireRole(roles: UserRoleValue[]) {
   try {
     const user = await getCurrentUser();
-    if (!user) redirect("/telegram/login");
+    if (!user) redirect("/login");
+    await assertUserApproval(user);
     if (!isProfileReady(user)) redirect("/welcome");
     const role = Object.values(UserRole).includes(user.role as UserRoleValue)
       ? (user.role as UserRoleValue)
@@ -258,21 +285,22 @@ export async function requireRole(roles: UserRoleValue[]) {
     if (isNextRedirectError(e)) throw e;
     if (e instanceof AuthDbError) throw e;
     console.error("[requireRole]", e instanceof Error ? e.message : e);
-    redirect("/telegram/login");
+    redirect("/login");
   }
 }
 
 export async function requireAuth() {
   try {
     const user = await getCurrentUser();
-    if (!user) redirect("/telegram/login");
+    if (!user) redirect("/login");
+    await assertUserApproval(user);
     if (!isProfileReady(user)) redirect("/welcome");
     return user;
   } catch (e) {
     if (isNextRedirectError(e) || isNextHttpAccessFallbackError(e)) throw e;
     if (e instanceof AuthDbError) throw e;
     console.error("[requireAuth]", e instanceof Error ? e.message : e);
-    redirect("/telegram/login");
+    redirect("/login");
   }
 }
 
@@ -286,6 +314,15 @@ export async function requireRoleApi(
     const user = await getCurrentUser();
     if (!user) {
       return { ok: false, response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
+    }
+    if (!shouldSkipApprovalCheck()) {
+      const status = user.approvalStatus ?? "APPROVED";
+      if (status === "PENDING") {
+        return { ok: false, response: NextResponse.json({ error: "Pending approval" }, { status: 403 }) };
+      }
+      if (status === "REJECTED") {
+        return { ok: false, response: NextResponse.json({ error: "Access denied" }, { status: 403 }) };
+      }
     }
     if (!isProfileReady(user)) {
       return { ok: false, response: NextResponse.json({ error: "Profile incomplete" }, { status: 403 }) };

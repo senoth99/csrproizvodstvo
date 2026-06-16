@@ -3,12 +3,11 @@
 import type { BrigadeShiftLabel } from "@/lib/brigades";
 import { cn } from "@/lib/utils";
 
-const ORDER: BrigadeShiftLabel[] = ["День", "Вечер", "Ночь"];
+const ORDER: BrigadeShiftLabel[] = ["День", "Вечер"];
 
 const timeHint: Record<BrigadeShiftLabel, string> = {
   День: "10:00–18:00",
-  Вечер: "18:00–00:00",
-  Ночь: "20:00–02:00"
+  Вечер: "18:00–00:00"
 };
 
 export function BrigadeModeTabs({
@@ -22,7 +21,7 @@ export function BrigadeModeTabs({
     <div
       role="tablist"
       aria-label="Режим смены"
-      className="grid w-full grid-cols-3 gap-1.5 sm:gap-2"
+      className="grid w-full grid-cols-2 gap-1.5 sm:gap-2"
     >
       {ORDER.map((m) => {
         const active = value === m;

@@ -1,4 +1,4 @@
-export type BrigadeShiftLabel = "День" | "Вечер" | "Ночь";
+export type BrigadeShiftLabel = "День" | "Вечер";
 
 export type BrigadeConfig = {
   id: string;
@@ -7,147 +7,99 @@ export type BrigadeConfig = {
   startTime: string;
   endTime: string;
   shiftLabel: BrigadeShiftLabel;
-  icon: "heat" | "printer" | "scissors" | "cpu" | "warehouse";
+  icon: "heat" | "printer" | "scissors" | "cpu" | "warehouse" | "pack";
 };
 
+const DAY_SLOT = { startTime: "10:00", endTime: "18:00", shiftLabel: "День" as const };
+const EVENING_SLOT = { startTime: "18:00", endTime: "00:00", shiftLabel: "Вечер" as const };
+
+/** (д) — только день; (дв) — день и вечер. */
 export const BRIGADES: BrigadeConfig[] = [
   /* ——— День 10:00–18:00 ——— */
   {
-    id: "thermopress-day",
-    title: "Термопресс",
-    zoneName: "Термопресс",
-    startTime: "10:00",
-    endTime: "18:00",
-    shiftLabel: "День",
-    icon: "heat"
-  },
-  {
-    id: "dtf-plotter-day",
-    title: "ДТФ и Плоттер",
-    zoneName: "ДТФ и Плоттер",
-    startTime: "10:00",
-    endTime: "18:00",
-    shiftLabel: "День",
+    id: "printer-dtf-day",
+    title: "Принтер+ДТФ",
+    zoneName: "Принтер+ДТФ",
+    ...DAY_SLOT,
     icon: "printer"
   },
   {
-    id: "printac-day",
-    title: "ПРИНТАК",
-    zoneName: "ПРИНТАК",
-    startTime: "10:00",
-    endTime: "18:00",
-    shiftLabel: "День",
+    id: "calender-plotter-day",
+    title: "Коландр + Плоттер",
+    zoneName: "Коландр + Плоттер",
+    ...DAY_SLOT,
     icon: "printer"
-  },
-  {
-    id: "cutting-day",
-    title: "Вырезальщики",
-    zoneName: "Вырезальщики",
-    startTime: "10:00",
-    endTime: "18:00",
-    shiftLabel: "День",
-    icon: "scissors"
   },
   {
     id: "cnc-day",
     title: "ЧПУ",
     zoneName: "ЧПУ",
-    startTime: "10:00",
-    endTime: "18:00",
-    shiftLabel: "День",
+    ...DAY_SLOT,
     icon: "cpu"
+  },
+  {
+    id: "cutting-day",
+    title: "Вырезашки",
+    zoneName: "Вырезашки",
+    ...DAY_SLOT,
+    icon: "scissors"
+  },
+  {
+    id: "thermopress-day",
+    title: "Термопресс",
+    zoneName: "Термопресс",
+    ...DAY_SLOT,
+    icon: "heat"
+  },
+  {
+    id: "kitting-day",
+    title: "Комплектовка",
+    zoneName: "Комплектовка",
+    ...DAY_SLOT,
+    icon: "pack"
   },
   {
     id: "warehouse-day",
     title: "Склад",
     zoneName: "Склад",
-    startTime: "10:00",
-    endTime: "18:00",
-    shiftLabel: "День",
+    ...DAY_SLOT,
     icon: "warehouse"
   },
-  /* ——— Вечер 18:00–00:00 ——— */
   {
-    id: "thermopress-evening",
-    title: "Термопресс",
-    zoneName: "Термопресс",
-    startTime: "18:00",
-    endTime: "00:00",
-    shiftLabel: "Вечер",
-    icon: "heat"
+    id: "warehouse-staff-day",
+    title: "Сотрудник склада",
+    zoneName: "Сотрудник склада",
+    ...DAY_SLOT,
+    icon: "warehouse"
   },
-  {
-    id: "dtf-plotter-evening",
-    title: "ДТФ и Плоттер",
-    zoneName: "ДТФ и Плоттер",
-    startTime: "18:00",
-    endTime: "00:00",
-    shiftLabel: "Вечер",
-    icon: "printer"
-  },
-  {
-    id: "printac-evening",
-    title: "ПРИНТАК",
-    zoneName: "ПРИНТАК",
-    startTime: "18:00",
-    endTime: "00:00",
-    shiftLabel: "Вечер",
-    icon: "printer"
-  },
-  {
-    id: "cutting-evening",
-    title: "Вырезальщики",
-    zoneName: "Вырезальщики",
-    startTime: "18:00",
-    endTime: "00:00",
-    shiftLabel: "Вечер",
-    icon: "scissors"
-  },
+  /* ——— Вечер 18:00–00:00 (только направления д/в) ——— */
   {
     id: "cnc-evening",
     title: "ЧПУ",
     zoneName: "ЧПУ",
-    startTime: "18:00",
-    endTime: "00:00",
-    shiftLabel: "Вечер",
+    ...EVENING_SLOT,
     icon: "cpu"
   },
   {
-    id: "warehouse-evening",
-    title: "Склад",
-    zoneName: "Склад",
-    startTime: "18:00",
-    endTime: "00:00",
-    shiftLabel: "Вечер",
-    icon: "warehouse"
-  },
-  /* ——— Ночь 20:00–02:00 (только ЧПУ, термопресс, вырезальщики) ——— */
-  {
-    id: "thermopress-night",
-    title: "Термопресс",
-    zoneName: "Термопресс",
-    startTime: "20:00",
-    endTime: "02:00",
-    shiftLabel: "Ночь",
-    icon: "heat"
-  },
-  {
-    id: "cutting-night",
-    title: "Вырезальщики",
-    zoneName: "Вырезальщики",
-    startTime: "20:00",
-    endTime: "02:00",
-    shiftLabel: "Ночь",
+    id: "cutting-evening",
+    title: "Вырезашки",
+    zoneName: "Вырезашки",
+    ...EVENING_SLOT,
     icon: "scissors"
   },
   {
-    id: "cnc-night",
-    title: "ЧПУ",
-    zoneName: "ЧПУ",
-    startTime: "20:00",
-    endTime: "02:00",
-    shiftLabel: "Ночь",
-    icon: "cpu"
+    id: "thermopress-evening",
+    title: "Термопресс",
+    zoneName: "Термопресс",
+    ...EVENING_SLOT,
+    icon: "heat"
+  },
+  {
+    id: "kitting-evening",
+    title: "Комплектовка",
+    zoneName: "Комплектовка",
+    ...EVENING_SLOT,
+    icon: "pack"
   }
 ];
 

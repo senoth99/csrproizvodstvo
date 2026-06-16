@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { Boxes, ChevronDown, Cpu, Flame, Loader2, Scissors, Shirt, X } from "lucide-react";
+import { Boxes, ChevronDown, Cpu, Flame, Loader2, Package, Scissors, Shirt, X } from "lucide-react";
 import { managerAssignBrigadeShift, managerRemoveShift, toggleBrigadeAssignment } from "@/app/actions";
 import { BrigadeModeTabs } from "@/components/BrigadeModeTabs";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -40,7 +40,8 @@ const iconMap = {
   printer: Shirt,
   scissors: Scissors,
   cpu: Cpu,
-  warehouse: Boxes
+  warehouse: Boxes,
+  pack: Package
 } as const;
 
 const cellKey = (zoneName: string, startTime: string, endTime: string, dayOfWeek: number) =>
@@ -53,6 +54,7 @@ export function BrigadeBoard({
   weekStartDateIso,
   weekMode,
   canManageSchedule = false,
+  canRemoveShifts = false,
   assignableEmployees = []
 }: {
   brigades: BrigadeConfig[];
@@ -61,6 +63,7 @@ export function BrigadeBoard({
   weekStartDateIso: string;
   weekMode: "current" | "next";
   canManageSchedule?: boolean;
+  canRemoveShifts?: boolean;
   assignableEmployees?: BrigadeAssignableEmployee[];
 }) {
   const [sheetPending, startSheet] = useTransition();
@@ -69,6 +72,7 @@ export function BrigadeBoard({
   const [mode, setMode] = useState<BrigadeShiftLabel>("День");
   const [openBrigadeId, setOpenBrigadeId] = useState<string | null>(null);
   const [boardError, setBoardError] = useState("");
+  const [boardInfo, setBoardInfo] = useState("");
   const [pickCtx, setPickCtx] = useState<PickCtx | null>(null);
   const [removeShift, setRemoveShift] = useState<ShiftWithUser | null>(null);
   const [sheetError, setSheetError] = useState<string | null>(null);
@@ -147,6 +151,7 @@ export function BrigadeBoard({
     if (busyCell) return;
     setBusyCell(busyId);
     setBoardError("");
+    setBoardInfo("");
     try {
       const result = await toggleBrigadeAssignment({
         brigadeId,
@@ -154,6 +159,9 @@ export function BrigadeBoard({
         weekStartDate: weekStartDateIso
       });
       setLocalShifts((prev) => applyToggleBrigadeResult(prev, result));
+      if (result.kind === "removal_requested") {
+        setBoardInfo("Запрос на снятие отправлен администратору. Смена останется, пока админ не снимет её.");
+      }
     } catch (e) {
       setBoardError(e instanceof Error ? e.message : "Не удалось записаться на смену");
     } finally {
@@ -166,6 +174,11 @@ export function BrigadeBoard({
       {boardError ? (
         <p className="rounded-lg border border-highlight/45 bg-highlight/12 px-3 py-2.5 text-sm text-foreground">
           {boardError}
+        </p>
+      ) : null}
+      {boardInfo ? (
+        <p className="rounded-lg border border-accent/45 bg-accent/12 px-3 py-2.5 text-sm text-foreground">
+          {boardInfo}
         </p>
       ) : null}
       <div className="sticky top-0 z-10 space-y-2.5 rounded-xl border border-border bg-card/95 p-3 shadow-sm backdrop-blur-md [-webkit-backdrop-filter:blur(10px)] sm:p-3.5">
@@ -287,7 +300,7 @@ export function BrigadeBoard({
                             </span>
                           ) : (
                             cellShifts.map((s) =>
-                              canManageSchedule ? (
+                              canRemoveShifts ? (
                                 <button
                                   key={s.id}
                                   type="button"
@@ -314,14 +327,35 @@ export function BrigadeBoard({
                                   />
                                   <span className="truncate font-medium">{s.user.name}</span>
                                 </button>
+                              ) : s.userId === currentUserId ? (
+                                <button
+                                  key={s.id}
+                                  type="button"
+                                  data-shift-chip="1"
+                                  disabled={sheetPending || isPastDay || isEmployeeTodayLocked}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (isPastDay || isEmployeeTodayLocked || sheetPending) return;
+                                    void runSelfToggle(
+                                      brigade.id,
+                                      d.index
+                                    );
+                                  }}
+                                  className="inline-flex max-w-full items-center gap-1 rounded-full border border-foreground/18 bg-foreground/[0.06] px-2 py-1 text-[10px] text-foreground transition hover:bg-foreground/[0.1]"
+                                  title="Запросить снятие смены"
+                                >
+                                  <UserAvatar
+                                    name={s.user.name}
+                                    photoUrl={s.user.telegramPhotoUrl}
+                                    color={s.user.color}
+                                    size="sm"
+                                  />
+                                  {s.user.name}
+                                </button>
                               ) : (
                                 <span
                                   key={s.id}
-                                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] ${
-                                    s.userId === currentUserId
-                                      ? "border-foreground/18 bg-foreground/[0.06] text-foreground"
-                                      : "border-border text-muted"
-                                  }`}
+                                  className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-1 text-[10px] text-muted"
                                 >
                                   <UserAvatar
                                     name={s.user.name}
@@ -335,6 +369,9 @@ export function BrigadeBoard({
                             )
                           )}
                         </div>
+                        {mine && !canManageSchedule && !isCellDisabled ? (
+                          <p className="mt-1.5 text-[10px] text-muted">Нажми на ячейку — запрос на снятие админу</p>
+                        ) : null}
                       </>
                     );
 
@@ -374,7 +411,7 @@ export function BrigadeBoard({
                           isCellDisabled
                             ? "cursor-not-allowed border-border bg-muted/[0.04] opacity-55"
                             : mine
-                              ? "border-border bg-transparent"
+                              ? "cursor-pointer border-foreground/18 bg-foreground/[0.06] hover:bg-foreground/[0.08]"
                               : "border-border bg-transparent hover:bg-foreground/[0.05]"
                         }`}
                       >

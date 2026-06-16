@@ -55,9 +55,13 @@ function resolveDatasourceUrl(): string | undefined {
   }
 }
 
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+const globalForPrisma = globalThis as unknown as {
+  prisma?: PrismaClient;
+  prismaSqliteConfigured?: boolean;
+};
 
 const url = resolveDatasourceUrl();
+const isSqlite = Boolean(url?.startsWith("file:"));
 
 if (!globalForPrisma.prisma) {
   globalForPrisma.prisma = new PrismaClient({
@@ -67,3 +71,19 @@ if (!globalForPrisma.prisma) {
 }
 
 export const prisma = globalForPrisma.prisma;
+
+/** WAL + cache tuning for SQLite — safe to call multiple times per process. */
+export async function ensurePrismaSqliteConfigured(): Promise<void> {
+  if (!isSqlite || globalForPrisma.prismaSqliteConfigured) return;
+  try {
+    // journal_mode returns a row — $executeRawUnsafe fails on SQLite with Prisma
+    await prisma.$queryRawUnsafe("PRAGMA journal_mode=WAL;");
+    await prisma.$executeRawUnsafe("PRAGMA synchronous=NORMAL;");
+    await prisma.$executeRawUnsafe("PRAGMA cache_size=-64000;");
+    globalForPrisma.prismaSqliteConfigured = true;
+  } catch (e) {
+    console.warn("[prisma] SQLite PRAGMA setup failed", e);
+  }
+}
+
+void ensurePrismaSqliteConfigured();
