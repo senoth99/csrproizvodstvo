@@ -67,6 +67,11 @@ npm ci
 echo "==> Generating Prisma client"
 npx prisma generate
 
+if pm2 describe "${APP_NAME}" >/dev/null 2>&1; then
+  echo "==> Stopping ${APP_NAME} before database migration (SQLite lock)"
+  pm2 stop "${APP_NAME}" || true
+fi
+
 echo "==> Applying database migrations (SQLite)"
 bash scripts/prisma-sqlite-migrate.sh
 
