@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarDays, Clock3, QrCode, Wrench } from "lucide-react";
-import { CheckInClient } from "@/components/CheckInClient";
+import { QrCheckInCore } from "@/components/QrCheckInCore";
 import { CompleteShiftReportDialog } from "@/components/CompleteShiftReportDialog";
 import { ShiftReportStatus, ShiftStatus } from "@/lib/enums";
 import {
@@ -143,17 +143,13 @@ export function MyShiftsSection({ weekShifts }: { weekShifts: ShiftItem[] }) {
       {weekShifts.map((s) => renderShiftCard(s))}
 
       {qrScanZone ? (
-        <div className="manager-modal-overlay" role="dialog" aria-modal="true" aria-label="Сканирование QR">
-          <div className="manager-modal-panel max-w-md">
-            <CheckInClient
-              zoneName={qrScanZone}
-              autoStartScanner
-              embedded
-              onClose={() => setQrScanZone(null)}
-              onSuccess={() => router.refresh()}
-            />
-          </div>
-        </div>
+        <QrCheckInCore
+          zoneName={qrScanZone}
+          autoStartScanner
+          embedded
+          onClose={() => setQrScanZone(null)}
+          onSuccess={() => router.refresh()}
+        />
       ) : null}
     </div>
   );
