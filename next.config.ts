@@ -19,10 +19,6 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ["lucide-react", "date-fns", "date-fns-tz"],
     serverActions: {
       bodySizeLimit: "2mb"
-    },
-    staleTimes: {
-      dynamic: 30,
-      static: 180
     }
   },
   images: {

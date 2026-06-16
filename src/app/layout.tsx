@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
 import { AppShell } from "@/components/AppShell";
 import { getShellSessionUser } from "@/lib/auth";
@@ -10,6 +10,17 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Производственный график",
   description: "Система графиков и отчетности сотрудников",
+  manifest: "/manifest.webmanifest",
+  applicationName: "Производственный график",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "График"
+  },
+  icons: {
+    icon: "/brand-logo.png",
+    apple: "/brand-logo.png"
+  },
   /** Меньше «умных» подчёркиваний дат/телефонов в Safari и Telegram WebView */
   formatDetection: {
     telephone: false,
@@ -17,6 +28,15 @@ export const metadata: Metadata = {
     address: false,
     date: false
   }
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+  themeColor: "#000000"
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

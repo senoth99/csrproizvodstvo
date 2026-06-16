@@ -18,8 +18,8 @@ export const BRIGADES: BrigadeConfig[] = [
   /* ——— День 10:00–18:00 ——— */
   {
     id: "printer-dtf-day",
-    title: "Принтер+ДТФ",
-    zoneName: "Принтер+ДТФ",
+    title: "Принтер + ДТФ",
+    zoneName: "Принтер + ДТФ",
     ...DAY_SLOT,
     icon: "printer"
   },

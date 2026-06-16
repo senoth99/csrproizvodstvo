@@ -7,6 +7,7 @@ import { SquarePen } from "lucide-react";
 import { BottomNav } from "@/components/BottomNav";
 import { NotificationBell } from "@/components/NotificationBell";
 import { PushNotificationSetup } from "@/components/PushNotificationSetup";
+import { PwaLifecycle } from "@/components/PwaLifecycle";
 import { SwipePageSwitch } from "@/components/SwipePageSwitch";
 import { cn } from "@/lib/utils";
 import { BRAND_LOGO_SRC } from "@/lib/brandLogo";
@@ -34,8 +35,9 @@ export function AppShell({
   return (
     <>
       {authenticated ? <PushNotificationSetup /> : null}
+      {authenticated ? <PwaLifecycle /> : null}
       {!hideAppChrome ? (
-        <header className="sticky top-0 z-[110] border-b border-border bg-black backdrop-blur-[2px]">
+        <header className="sticky top-0 z-[110] border-b border-border bg-black pt-[env(safe-area-inset-top)] backdrop-blur-[2px]">
           <div className="mx-auto grid max-w-5xl grid-cols-3 items-center px-3 py-2.5">
             <div className="flex justify-start">{authenticated ? <NotificationBell /> : null}</div>
             <div className="flex justify-center">
@@ -70,7 +72,7 @@ export function AppShell({
           "mx-auto max-w-5xl",
           hideAppChrome
             ? "min-h-screen min-h-[100dvh] p-0"
-            : "min-h-[calc(100vh-108px)] p-3 pb-24 md:min-h-[calc(100vh-120px)] md:p-5 md:pb-24"
+            : "min-h-[calc(100vh-108px)] p-3 pb-[calc(6rem+env(safe-area-inset-bottom))] md:min-h-[calc(100vh-120px)] md:p-5 md:pb-[calc(6rem+env(safe-area-inset-bottom))]"
         )}
       >
         <SwipePageSwitch>{children}</SwipePageSwitch>

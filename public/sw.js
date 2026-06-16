@@ -36,6 +36,7 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const rawUrl = event.notification.data?.url || "/me";
+  const targetUrl = new URL(rawUrl, self.location.origin).href;
 
   event.waitUntil(
     (async () => {
@@ -44,13 +45,13 @@ self.addEventListener("notificationclick", (event) => {
         if ("focus" in client) {
           await client.focus();
           if ("navigate" in client && typeof client.navigate === "function") {
-            await client.navigate(rawUrl);
+            await client.navigate(targetUrl);
           }
           return;
         }
       }
       if (self.clients.openWindow) {
-        await self.clients.openWindow(rawUrl);
+        await self.clients.openWindow(targetUrl);
       }
     })()
   );

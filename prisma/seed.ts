@@ -42,7 +42,7 @@ async function main() {
     );
   }
   const zones = await Promise.all([
-    prisma.zone.create({ data: { name: "Принтер+ДТФ", sortOrder: 1 } }),
+    prisma.zone.create({ data: { name: "Принтер + ДТФ", sortOrder: 1 } }),
     prisma.zone.create({ data: { name: "Коландр + Плоттер", sortOrder: 2 } }),
     prisma.zone.create({ data: { name: "ЧПУ", sortOrder: 3 } }),
     prisma.zone.create({ data: { name: "Вырезашки", sortOrder: 4 } }),

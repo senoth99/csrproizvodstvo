@@ -191,7 +191,7 @@ export default async function SchedulePage({
         ) : null}
 
         {view === "month" ? (
-          <>
+          <div data-no-swipe="true" className="space-y-3">
             <ScheduleMonthSwitch
               year={monthParsed.year}
               month={monthParsed.month}
@@ -199,7 +199,7 @@ export default async function SchedulePage({
               weekMode={weekMode}
             />
             <ScheduleMonthTable employees={monthTableRows} days={monthMeta.days} />
-          </>
+          </div>
         ) : null}
       </div>
     );

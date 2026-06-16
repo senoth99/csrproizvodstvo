@@ -2,6 +2,7 @@
 
 import { useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { isStandalonePwa } from "@/lib/pwa";
 
 const SWIPE_THRESHOLD = 60;
 const VERTICAL_TOLERANCE = 48;
@@ -9,7 +10,8 @@ const VERTICAL_TOLERANCE = 48;
 export function SwipePageSwitch({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname() ?? "";
-  const swipeEnabled = pathname.startsWith("/schedule") || pathname.startsWith("/me");
+  const swipeEnabled =
+    !isStandalonePwa() && (pathname.startsWith("/schedule") || pathname.startsWith("/me"));
   const startX = useRef<number | null>(null);
   const startY = useRef<number | null>(null);
 
