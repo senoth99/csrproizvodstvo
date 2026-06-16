@@ -12,6 +12,7 @@ import {
   applyToggleBrigadeResult,
   type BrigadeBoardShift
 } from "@/lib/brigadeAssignment";
+import type { ScheduleWeekKind } from "@/lib/scheduleWeek";
 import { formatDateRu, isBeforeAppDay, isSameAppDay, isoFromWeekDay, safeParseISO, weekDays } from "@/lib/utils";
 
 export type BrigadeAssignableEmployee = {
@@ -53,6 +54,7 @@ export function BrigadeBoard({
   currentUserId,
   weekStartDateIso,
   weekMode,
+  weekKind = "current",
   canManageSchedule = false,
   canRemoveShifts = false,
   assignableEmployees = []
@@ -62,6 +64,7 @@ export function BrigadeBoard({
   currentUserId: string;
   weekStartDateIso: string;
   weekMode: "current" | "next";
+  weekKind?: ScheduleWeekKind;
   canManageSchedule?: boolean;
   canRemoveShifts?: boolean;
   assignableEmployees?: BrigadeAssignableEmployee[];
@@ -239,13 +242,18 @@ export function BrigadeBoard({
                 <div className="space-y-2">
                   <div
                     className={`mb-1 inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] ${
-                      weekMode === "current"
+                      weekKind === "current"
                         ? "border-foreground/25 bg-foreground/[0.06]"
                         : "border-muted/35 bg-muted/[0.06]"
                     }`}
                   >
-                    <span className={weekMode === "current" ? "text-foreground" : "text-muted"}>
-                      {weekMode === "current" ? "Нынешняя" : "Следующая"} • {weekRangeLabel}
+                    <span className={weekKind === "current" ? "text-foreground" : "text-muted"}>
+                      {weekKind === "current"
+                        ? "Нынешняя"
+                        : weekKind === "next"
+                          ? "Следующая"
+                          : "Выбранная"}{" "}
+                      • {weekRangeLabel}
                     </span>
                   </div>
                   {weekDays.map((d) => {
@@ -257,9 +265,10 @@ export function BrigadeBoard({
                     const isToday = isSameAppDay(dayDate, new Date());
                     const isEmployeeTodayLocked =
                       !canManageSchedule && weekMode === "current" && isToday;
+                    const isCellDisabled = !canManageSchedule && (isPastDay || isEmployeeTodayLocked);
+
                     const thisBusyId = cellBusyId(brigade.id, d.index);
                     const isThisBusy = busyCell === thisBusyId;
-                    const isCellDisabled = isPastDay || isEmployeeTodayLocked;
 
                     const openPicker = () => {
                       if (isCellDisabled) return;
@@ -282,7 +291,12 @@ export function BrigadeBoard({
                             {isThisBusy ? (
                               <Loader2 size={12} className="animate-spin text-muted" aria-hidden />
                             ) : null}
-                            {isPastDay ? <span className="text-[10px] text-muted">Недоступно</span> : null}
+                            {isPastDay && !canManageSchedule ? (
+                              <span className="text-[10px] text-muted">Недоступно</span>
+                            ) : null}
+                            {isPastDay && canManageSchedule ? (
+                              <span className="text-[10px] text-muted">Прошедший день</span>
+                            ) : null}
                             {isEmployeeTodayLocked ? (
                               <span className="text-[10px] text-muted">Запись закрыта</span>
                             ) : null}
@@ -305,14 +319,14 @@ export function BrigadeBoard({
                                   key={s.id}
                                   type="button"
                                   data-shift-chip="1"
-                                  disabled={sheetPending || isPastDay || isEmployeeTodayLocked}
+                                  disabled={sheetPending || (!canRemoveShifts && (isPastDay || isEmployeeTodayLocked))}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    if (isPastDay || isEmployeeTodayLocked || sheetPending) return;
+                                    if ((!canRemoveShifts && (isPastDay || isEmployeeTodayLocked)) || sheetPending) return;
                                     setRemoveShift(s);
                                   }}
                                   className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-1 text-left text-[10px] transition-all duration-200 ease-out ${
-                                    isPastDay
+                                    !canRemoveShifts && isPastDay
                                       ? "cursor-not-allowed border-border text-muted opacity-60"
                                       : s.userId === currentUserId
                                         ? "min-h-[2.25rem] border-foreground/20 bg-foreground/[0.07] text-foreground hover:border-muted/45 hover:bg-foreground/[0.1]"

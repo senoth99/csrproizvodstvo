@@ -39,7 +39,7 @@ import {
 } from "@/lib/notifyAdmins";
 import { describeShiftBrief } from "@/lib/shiftBrief";
 import { prismaUserListNameSelect, prismaUserShiftBoardSelect } from "@/lib/prismaSafeUserInclude";
-import { APP_TIME_ZONE, isSameAppDay, isoFromWeekDay } from "@/lib/utils";
+import { APP_TIME_ZONE, isBeforeAppDay, isSameAppDay, isoFromWeekDay } from "@/lib/utils";
 import {
   getReportPhotoApiPath,
   resolveReportPhotoDiskPath
@@ -530,6 +530,8 @@ export async function managerAssignBrigadeShift(input: unknown): Promise<Manager
 
   const start = toDateTime(weekStartDate, data.dayOfWeek, brigade.startTime);
   const end = endAt(start, brigade.startTime, brigade.endTime);
+  const dayDate = isoFromWeekDay(weekStartDate, data.dayOfWeek);
+  const shiftStatus = isBeforeAppDay(dayDate, new Date()) ? ShiftStatus.COMPLETED : ShiftStatus.PLANNED;
 
   const shiftsReplaced = await prisma.shift.findMany({
     where: {
@@ -562,6 +564,7 @@ export async function managerAssignBrigadeShift(input: unknown): Promise<Manager
         dayOfWeek: data.dayOfWeek,
         startTime: brigade.startTime,
         endTime: brigade.endTime,
+        status: shiftStatus,
         source: ShiftSource.ADMIN,
         createdById: actor.id,
         updatedById: actor.id

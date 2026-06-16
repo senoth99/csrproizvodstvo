@@ -22,6 +22,7 @@ import {
 } from "@/lib/scheduleTable";
 import { getCurrentAppMonth } from "@/lib/workedHours";
 import { addAppDays, getWeekStart } from "@/lib/utils";
+import { resolveScheduleWeekStart } from "@/lib/scheduleWeek";
 import { resolveUserAvatarUrl } from "@/lib/userAvatar";
 
 const scheduleUserSelect = {
@@ -38,7 +39,7 @@ function parseView(raw: string | undefined): ScheduleView {
 export default async function SchedulePage({
   searchParams
 }: {
-  searchParams: Promise<{ week?: string; view?: string; month?: string }>;
+  searchParams: Promise<{ week?: string; weekStart?: string; view?: string; month?: string }>;
 }) {
   const authResult = await catchAuth(() => requireAuth());
   if (!authResult.ok) return <ServiceUnavailable scope="schedule" />;
@@ -48,8 +49,11 @@ export default async function SchedulePage({
   const weekMode: "current" | "next" = params.week === "next" ? "next" : "current";
   const currentWeekStart = getWeekStart(new Date());
   const nextWeekStart = addAppDays(currentWeekStart, 7);
-  const weekStartDate = weekMode === "next" ? nextWeekStart : currentWeekStart;
   const canManageSchedule = canAssignShiftsToOthers(user);
+  const { weekStartDate, kind: weekKind } = resolveScheduleWeekStart({
+    week: params.week,
+    weekStart: canManageSchedule ? params.weekStart : undefined
+  });
   const canRemoveScheduleShifts = canRemoveShifts(user);
 
   const currentMonth = getCurrentAppMonth();
@@ -149,6 +153,9 @@ export default async function SchedulePage({
         <ScheduleViewSwitch
           view={view}
           weekMode={weekMode}
+          weekStartIso={weekStartDate.toISOString()}
+          canBrowseWeeks={canManageSchedule}
+          currentWeekStartIso={currentWeekStart.toISOString()}
           monthYear={monthParsed.year}
           monthMonth={monthParsed.month}
         />
@@ -157,6 +164,9 @@ export default async function SchedulePage({
           <div data-no-swipe="true" className="space-y-4">
             <WeekModeSwitch
               mode={weekMode}
+              weekKind={weekKind}
+              weekStartIso={weekStartDate.toISOString()}
+              canBrowseWeeks={canManageSchedule}
               currentWeekStartIso={currentWeekStart.toISOString()}
               nextWeekStartIso={nextWeekStart.toISOString()}
               scheduleView="brigades"
@@ -169,6 +179,7 @@ export default async function SchedulePage({
               currentUserId={user.id}
               weekStartDateIso={weekStartDate.toISOString()}
               weekMode={weekMode}
+              weekKind={weekKind}
               canManageSchedule={canManageSchedule}
               canRemoveShifts={canRemoveScheduleShifts}
               assignableEmployees={assignableEmployees}
@@ -180,6 +191,9 @@ export default async function SchedulePage({
           <div data-no-swipe="true" className="space-y-4">
             <WeekModeSwitch
               mode={weekMode}
+              weekKind={weekKind}
+              weekStartIso={weekStartDate.toISOString()}
+              canBrowseWeeks={canManageSchedule}
               currentWeekStartIso={currentWeekStart.toISOString()}
               nextWeekStartIso={nextWeekStart.toISOString()}
               scheduleView="table"

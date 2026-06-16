@@ -1,18 +1,25 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { cn } from "@/lib/utils";
+import { formatScheduleWeekStartParam } from "@/lib/scheduleWeek";
+import { cn, isSameAppDay, safeParseISO } from "@/lib/utils";
 
 export type ScheduleView = "brigades" | "table" | "month";
 
 export function ScheduleViewSwitch({
   view,
   weekMode,
+  weekStartIso,
+  canBrowseWeeks = false,
+  currentWeekStartIso,
   monthYear,
   monthMonth
 }: {
   view: ScheduleView;
   weekMode: "current" | "next";
+  weekStartIso?: string;
+  canBrowseWeeks?: boolean;
+  currentWeekStartIso?: string;
   monthYear: number;
   monthMonth: number;
 }) {
@@ -22,7 +29,15 @@ export function ScheduleViewSwitch({
     if (next === view) return;
     const params = new URLSearchParams();
     if (next !== "brigades") params.set("view", next);
-    if (weekMode === "next") params.set("week", "next");
+    if (canBrowseWeeks && weekStartIso && currentWeekStartIso) {
+      const active = safeParseISO(weekStartIso);
+      const current = safeParseISO(currentWeekStartIso);
+      if (!isSameAppDay(active, current)) {
+        params.set("weekStart", formatScheduleWeekStartParam(active));
+      }
+    } else if (weekMode === "next") {
+      params.set("week", "next");
+    }
     const mm = String(monthMonth).padStart(2, "0");
     params.set("month", `${monthYear}-${mm}`);
     const q = params.toString();
