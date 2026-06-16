@@ -50,5 +50,7 @@ export async function getCachedAvatarBlobUrl(photoUrl: string): Promise<string> 
 }
 
 export function shouldUseClientAvatarCache(photoUrl: string | null | undefined): photoUrl is string {
-  return Boolean(photoUrl?.trim()) && isLocalAvatarUrl(photoUrl.trim());
+  if (typeof photoUrl !== "string") return false;
+  const trimmed = photoUrl.trim();
+  return trimmed.length > 0 && isLocalAvatarUrl(trimmed);
 }
