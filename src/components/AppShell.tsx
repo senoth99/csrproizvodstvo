@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { SquarePen } from "lucide-react";
+import { AppServiceWorkerRegister } from "@/components/AppServiceWorkerRegister";
 import { BottomNav } from "@/components/BottomNav";
 import { NotificationBell } from "@/components/NotificationBell";
 import { PushNotificationSetup } from "@/components/PushNotificationSetup";
@@ -34,6 +35,7 @@ export function AppShell({
 
   return (
     <>
+      {authenticated ? <AppServiceWorkerRegister /> : null}
       {authenticated ? <PushNotificationSetup /> : null}
       {authenticated ? <PwaLifecycle /> : null}
       {!hideAppChrome ? (

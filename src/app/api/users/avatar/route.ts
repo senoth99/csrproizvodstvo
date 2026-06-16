@@ -6,7 +6,12 @@ import { AuthDbError, getCurrentUser } from "@/lib/auth";
 import { CACHE_TAGS } from "@/lib/cache";
 import { detectImageFromBuffer } from "@/lib/imageMagicBytes";
 import { prisma } from "@/lib/prisma";
-import { getAvatarApiPath, getAvatarDiskPath, resolveAvatarDiskPath } from "@/lib/userAvatar";
+import {
+  AVATAR_HTTP_CACHE_CONTROL,
+  getAvatarApiPath,
+  getAvatarDiskPath,
+  resolveAvatarDiskPath
+} from "@/lib/userAvatar";
 
 const MAX_BYTES = 512 * 1024;
 
@@ -41,6 +46,20 @@ export async function GET(req: Request) {
     const diskPath = resolveAvatarDiskPath(userId);
     if (!diskPath) return new NextResponse(null, { status: 404 });
 
+    const version =
+      url.searchParams.get("v")?.trim() ||
+      String(target.avatarUpdatedAt.getTime());
+    const etag = `"${userId}-${version}"`;
+    if (req.headers.get("if-none-match") === etag) {
+      return new NextResponse(null, {
+        status: 304,
+        headers: {
+          ETag: etag,
+          "Cache-Control": AVATAR_HTTP_CACHE_CONTROL
+        }
+      });
+    }
+
     const buf = await readFile(diskPath);
     const detected = detectImageFromBuffer(buf);
     if (!detected) return new NextResponse(null, { status: 415 });
@@ -48,7 +67,8 @@ export async function GET(req: Request) {
     return new NextResponse(buf, {
       headers: {
         "Content-Type": detected.mime,
-        "Cache-Control": "private, max-age=86400"
+        ETag: etag,
+        "Cache-Control": AVATAR_HTTP_CACHE_CONTROL
       }
     });
   } catch (e) {

@@ -18,6 +18,9 @@ export function resolveAvatarDiskPath(userId: string): string | null {
   return existsSync(p) ? p : null;
 }
 
+/** URL с ?v= меняется при загрузке — можно кэшировать надолго. */
+export const AVATAR_HTTP_CACHE_CONTROL = "private, max-age=31536000, immutable";
+
 export function getAvatarApiPath(userId: string, version?: number | Date | null): string {
   const v =
     version instanceof Date

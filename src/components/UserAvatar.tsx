@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { getCachedAvatarBlobUrl, shouldUseClientAvatarCache } from "@/lib/avatarClientCache";
 
 type UserAvatarProps = {
   name: string;
@@ -26,17 +27,51 @@ const sizeClassMap = {
 } as const;
 
 export function UserAvatar({ name, photoUrl, color, size = "md", className = "" }: UserAvatarProps) {
+  const trimmedUrl = photoUrl?.trim() ?? "";
+  const useClientCache = shouldUseClientAvatarCache(trimmedUrl);
   const [photoFailed, setPhotoFailed] = useState(false);
+  const [resolvedSrc, setResolvedSrc] = useState<string | null>(() =>
+    trimmedUrl && !shouldUseClientAvatarCache(trimmedUrl) ? trimmedUrl : null
+  );
   const sizeClass = sizeClassMap[size];
   const baseClass = `inline-flex items-center justify-center rounded-full border border-border object-cover ${sizeClass} ${className}`.trim();
-  const showPhoto = Boolean(photoUrl?.trim()) && !photoFailed;
+  const showPhoto = Boolean(trimmedUrl) && !photoFailed;
 
-  if (showPhoto) {
+  useEffect(() => {
+    setPhotoFailed(false);
+  }, [trimmedUrl]);
+
+  useEffect(() => {
+    if (!showPhoto) {
+      setResolvedSrc(null);
+      return;
+    }
+
+    if (!useClientCache) {
+      setResolvedSrc(trimmedUrl);
+      return;
+    }
+
+    let cancelled = false;
+    void getCachedAvatarBlobUrl(trimmedUrl)
+      .then((url) => {
+        if (!cancelled) setResolvedSrc(url);
+      })
+      .catch(() => {
+        if (!cancelled) setPhotoFailed(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showPhoto, trimmedUrl, useClientCache]);
+
+  if (showPhoto && resolvedSrc) {
     return (
-      // Telegram CDN-хосты непредсказуемы — сырой img без next/image, с fallback на инициалы.
+      // Telegram CDN — сырой img + SW-кэш; локальные — blob из Cache API.
       // eslint-disable-next-line @next/next/no-img-element -- external avatar URLs
       <img
-        src={photoUrl!}
+        src={resolvedSrc}
         alt={name}
         className={baseClass}
         loading="lazy"
