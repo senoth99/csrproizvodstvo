@@ -9,6 +9,7 @@ export default function RegisterPage() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
+  const [telegramUsername, setTelegramUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
@@ -35,7 +36,8 @@ export default function RegisterPage() {
             phone,
             password,
             firstName: firstName.trim(),
-            lastName: lastName.trim()
+            lastName: lastName.trim(),
+            telegramUsername: telegramUsername.trim()
           })
         });
         const data = (await res.json()) as {
@@ -92,6 +94,15 @@ export default function RegisterPage() {
             autoComplete="tel"
             inputMode="tel"
             required
+          />
+          <input
+            value={telegramUsername}
+            onChange={(e) => setTelegramUsername(e.target.value)}
+            placeholder="Telegram @username (необязательно)"
+            autoComplete="username"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
           />
           <input
             type="password"

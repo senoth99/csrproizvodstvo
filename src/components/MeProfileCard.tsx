@@ -9,7 +9,7 @@ import { formatPhoneDisplay } from "@/lib/formatPhone";
 
 export function MeProfileCard({
   displayName,
-  telegramUsername,
+  telegramUsername: initialTelegramUsername,
   photoUrl,
   hasCustomAvatar,
   accentColor,
@@ -33,6 +33,7 @@ export function MeProfileCard({
   const [firstName, setFirstName] = useState(initialFirstName);
   const [lastName, setLastName] = useState(initialLastName);
   const [phone, setPhone] = useState(initialPhone);
+  const [telegramUsername, setTelegramUsername] = useState(initialTelegramUsername);
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
   const [editing, setEditing] = useState(!hasCompleteProfile);
@@ -55,7 +56,7 @@ export function MeProfileCard({
                 {displayName}
               </h1>
               <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.08em] text-muted leading-none">
-                @{telegramUsername}
+                {initialTelegramUsername.trim() ? `@${initialTelegramUsername}` : "Telegram не указан"}
               </p>
               {!editing && initialPhone.trim() ? (
                 <p className="mt-2 text-sm tabular-nums text-foreground/90">{formatPhoneDisplay(initialPhone)}</p>
@@ -73,6 +74,7 @@ export function MeProfileCard({
                     setFirstName(initialFirstName);
                     setLastName(initialLastName);
                     setPhone(initialPhone);
+                    setTelegramUsername(initialTelegramUsername);
                   }
                   setOk("");
                   setError("");
@@ -95,7 +97,7 @@ export function MeProfileCard({
                 setOk("");
                 start(async () => {
                   try {
-                    await updateMyProfile({ firstName, lastName, phone });
+                    await updateMyProfile({ firstName, lastName, phone, telegramUsername });
                     setOk("Сохранено");
                     setEditing(false);
                     router.refresh();
@@ -130,6 +132,16 @@ export function MeProfileCard({
                 inputMode="tel"
                 disabled={pending}
               />
+              <input
+                value={telegramUsername}
+                onChange={(e) => setTelegramUsername(e.target.value)}
+                placeholder="Telegram @username (необязательно)"
+                autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                disabled={pending}
+              />
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   className="btn-primary"
@@ -146,6 +158,7 @@ export function MeProfileCard({
                       setFirstName(initialFirstName);
                       setLastName(initialLastName);
                       setPhone(initialPhone);
+                      setTelegramUsername(initialTelegramUsername);
                       setEditing(false);
                       setOk("");
                       setError("");

@@ -82,10 +82,19 @@ const phoneFieldSchema = z
   .refine((v) => isValidPhone(v), "Формат: +7 и 10 цифр")
   .transform(normalizePhoneInput);
 
+const telegramUsernameFieldSchema = z
+  .string()
+  .trim()
+  .transform((v) => v.replace(/^@+/, "").toLowerCase())
+  .refine((v) => v === "" || /^[a-z][a-z0-9_]{4,31}$/.test(v), {
+    message: "Username Telegram: 5–32 символа, латиница, цифры и _"
+  });
+
 export const profileNamesPhoneSchema = z.object({
   firstName: z.string().trim().min(2, "Имя минимум 2 символа"),
   lastName: z.string().trim().min(2, "Фамилия минимум 2 символа"),
-  phone: phoneFieldSchema
+  phone: phoneFieldSchema,
+  telegramUsername: telegramUsernameFieldSchema.optional().default("")
 });
 
 export const zoneChecklistItemSchema = z.object({

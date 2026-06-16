@@ -35,10 +35,26 @@ type CheckInSuccess = {
   zoneName: string | null;
 };
 
-export function CheckInClient({ zoneName }: { zoneName: string }) {
+type CheckInClientProps = {
+  zoneName: string;
+  /** Сразу открыть камеру (из «Мои смены»). */
+  autoStartScanner?: boolean;
+  /** Компактный UI в модалке, без отдельной страницы. */
+  embedded?: boolean;
+  onClose?: () => void;
+  onSuccess?: () => void;
+};
+
+export function CheckInClient({
+  zoneName,
+  autoStartScanner = false,
+  embedded = false,
+  onClose,
+  onSuccess
+}: CheckInClientProps) {
   const searchParams = useSearchParams();
   const autoSubmitted = useRef(false);
-  const [scanning, setScanning] = useState(false);
+  const [scanning, setScanning] = useState(autoStartScanner);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState<CheckInSuccess | null>(null);
@@ -86,12 +102,13 @@ export function CheckInClient({ zoneName }: { zoneName: string }) {
       setSuccess(result);
       const zone = result.zoneName ? `${result.zoneName}. ` : "";
       showInstantNotification("Всё отлично!", `Ваша смена начата. ${zone}`.trim());
+      onSuccess?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка");
     } finally {
       setBusy(false);
     }
-  }, [zoneName]);
+  }, [zoneName, onSuccess]);
 
   const handleDecoded = useCallback(
     (text: string) => {
@@ -116,15 +133,45 @@ export function CheckInClient({ zoneName }: { zoneName: string }) {
     ? formatDateRu(safeParseISO(success.arrivedAt), "dd.MM.yyyy HH:mm")
     : "";
 
-  return (
-    <div className="mx-auto max-w-md space-y-4">
-      <h1 className="text-2xl font-bold">Сканировать QR</h1>
-      <p className="text-sm text-muted">
-        Смена на сегодня: <span className="font-medium text-foreground">{zoneName}</span>. Наведите камеру на
-        QR-код на производстве — смена начнётся автоматически.
-      </p>
+  const dismissSuccess = () => {
+    setSuccess(null);
+    if (embedded) onClose?.();
+  };
 
-      {!scanning ? (
+  const closeScanner = () => {
+    setScanning(false);
+    if (embedded) onClose?.();
+  };
+
+  return (
+    <div className={embedded ? "space-y-3" : "mx-auto max-w-md space-y-4"}>
+      {!embedded ? (
+        <>
+          <h1 className="text-2xl font-bold">Сканировать QR</h1>
+          <p className="text-sm text-muted">
+            Смена на сегодня: <span className="font-medium text-foreground">{zoneName}</span>. Наведите камеру на
+            QR-код на производстве — смена начнётся автоматически.
+          </p>
+        </>
+      ) : (
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-sm text-muted">
+            <span className="font-medium text-foreground">{zoneName}</span> · наведите на QR-код на производстве
+          </p>
+          {onClose ? (
+            <button
+              type="button"
+              onClick={closeScanner}
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border text-muted"
+              aria-label="Закрыть сканер"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          ) : null}
+        </div>
+      )}
+
+      {!scanning && !embedded ? (
         <button
           type="button"
           onClick={() => {
@@ -150,7 +197,7 @@ export function CheckInClient({ zoneName }: { zoneName: string }) {
             type="button"
             className="btn-secondary w-full"
             disabled={busy}
-            onClick={() => setScanning(false)}
+            onClick={() => (embedded ? closeScanner() : setScanning(false))}
           >
             Закрыть камеру
           </button>
@@ -179,14 +226,14 @@ export function CheckInClient({ zoneName }: { zoneName: string }) {
               </div>
               <button
                 type="button"
-                onClick={() => setSuccess(null)}
+                onClick={dismissSuccess}
                 className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted"
                 aria-label="Закрыть"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <button type="button" className="btn-primary mt-5 w-full" onClick={() => setSuccess(null)}>
+            <button type="button" className="btn-primary mt-5 w-full" onClick={dismissSuccess}>
               Отлично
             </button>
           </div>

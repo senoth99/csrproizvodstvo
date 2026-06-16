@@ -16,6 +16,7 @@ import {
 import { BRIGADES } from "@/lib/brigades";
 import { isValidPhone, normalizePhoneInput } from "@/lib/formatPhone";
 import { isSuperAdminPhone, normalizePhone } from "@/lib/phoneAuth";
+import { assertTelegramUsernameFree } from "@/lib/telegramUsername";
 import { resolveUserAvatarUrl } from "@/lib/userAvatar";
 import { prisma } from "@/lib/prisma";
 import { reportSchema, shiftSchema, updateReportSchema, updateShiftSchema, updateZoneChecklistItemSchema, userSchema, zoneChecklistItemSchema, zoneLimitSchema, zoneSchema, profileNamesPhoneSchema } from "@/lib/validation";
@@ -1392,12 +1393,15 @@ export async function updateMyProfile(input: unknown) {
   const user = await requireAuth();
   const data = profileNamesPhoneSchema.parse(input);
   const displayName = `${data.lastName} ${data.firstName}`.trim();
+  const telegramUsername = data.telegramUsername || null;
+  await assertTelegramUsernameFree(telegramUsername ?? "", user.id);
   await prisma.user.update({
     where: { id: user.id },
     data: {
       firstName: data.firstName,
       lastName: data.lastName,
       phone: normalizePhone(data.phone),
+      telegramUsername,
       name: displayName,
       profileCompleted: true
     }
@@ -1411,12 +1415,15 @@ export async function completeWelcomeProfile(input: unknown) {
   if (!user) throw new Error("Нужна авторизация");
   const data = profileNamesPhoneSchema.parse(input);
   const displayName = `${data.lastName} ${data.firstName}`.trim();
+  const telegramUsername = data.telegramUsername || null;
+  await assertTelegramUsernameFree(telegramUsername ?? "", user.id);
   await prisma.user.update({
     where: { id: user.id },
     data: {
       firstName: data.firstName,
       lastName: data.lastName,
       phone: normalizePhone(data.phone),
+      telegramUsername,
       name: displayName,
       profileCompleted: true
     }

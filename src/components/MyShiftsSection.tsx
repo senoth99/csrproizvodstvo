@@ -1,7 +1,9 @@
 "use client";
 
-import Link from "next/link";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { CalendarDays, Clock3, QrCode, Wrench } from "lucide-react";
+import { CheckInClient } from "@/components/CheckInClient";
 import { CompleteShiftReportDialog } from "@/components/CompleteShiftReportDialog";
 import { ShiftReportStatus, ShiftStatus } from "@/lib/enums";
 import {
@@ -25,6 +27,8 @@ type ShiftItem = {
 };
 
 export function MyShiftsSection({ weekShifts }: { weekShifts: ShiftItem[] }) {
+  const router = useRouter();
+  const [qrScanZone, setQrScanZone] = useState<string | null>(null);
   const now = new Date();
   const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -86,13 +90,14 @@ export function MyShiftsSection({ weekShifts }: { weekShifts: ShiftItem[] }) {
         ) : null}
 
         {showQrHint ? (
-          <Link
-            href="/check-in"
-            className="flex items-center justify-center gap-2 rounded-sm border border-border bg-background px-3 py-2.5 text-center text-[10px] font-bold uppercase tracking-display text-foreground transition-colors hover:bg-foreground/[0.06]"
+          <button
+            type="button"
+            onClick={() => setQrScanZone(s.zoneName)}
+            className="flex w-full items-center justify-center gap-2 rounded-sm border border-border bg-background px-3 py-2.5 text-center text-[10px] font-bold uppercase tracking-display text-foreground transition-colors hover:bg-foreground/[0.06]"
           >
             <QrCode size={14} aria-hidden />
             Сканировать QR, чтобы начать
-          </Link>
+          </button>
         ) : null}
 
         {s.status !== ShiftStatus.CANCELLED ? (
@@ -136,6 +141,20 @@ export function MyShiftsSection({ weekShifts }: { weekShifts: ShiftItem[] }) {
         </div>
       ) : null}
       {weekShifts.map((s) => renderShiftCard(s))}
+
+      {qrScanZone ? (
+        <div className="manager-modal-overlay" role="dialog" aria-modal="true" aria-label="Сканирование QR">
+          <div className="manager-modal-panel max-w-md">
+            <CheckInClient
+              zoneName={qrScanZone}
+              autoStartScanner
+              embedded
+              onClose={() => setQrScanZone(null)}
+              onSuccess={() => router.refresh()}
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

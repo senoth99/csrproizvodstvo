@@ -19,6 +19,7 @@ export default async function WelcomePage() {
       initialFirstName={user.firstName ?? ""}
       initialLastName={user.lastName ?? ""}
       initialPhone={user.phone ?? ""}
+      initialTelegramUsername={user.telegramUsername ?? ""}
     />
   );
 }

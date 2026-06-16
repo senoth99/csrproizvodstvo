@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { addDays } from "date-fns";
-import { ChevronRight, QrCode } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { ServiceUnavailable } from "@/components/ServiceUnavailable";
 import { MeProfileCard } from "@/components/MeProfileCard";
 import { MyShiftsSection } from "@/components/MyShiftsSection";
@@ -11,7 +11,6 @@ import { prisma } from "@/lib/prisma";
 import { formatMoneyRu, getWeekStart } from "@/lib/utils";
 import { formatWorkedMinutes, getCurrentAppMonth } from "@/lib/workedHours";
 import { resolveUserAvatarUrl } from "@/lib/userAvatar";
-import { canStartShiftViaQrToday, findUserShiftToday } from "@/lib/todayShift";
 
 export default async function MePage() {
   const authResult = await catchAuth(() => requireAuth());
@@ -21,27 +20,25 @@ export default async function MePage() {
   const weekEnd = addDays(weekStart, 14);
   const monthLabel = getCurrentAppMonth().label;
   const loaded = await catchDb("me", async () => {
-    const [shifts, balanceRow, monthlyMinutes, todayShift] = await Promise.all([
+    const [shifts, balanceRow, monthlyMinutes] = await Promise.all([
       prisma.shift.findMany({
         where: { userId: user.id, weekStartDate: { gte: weekStart, lt: weekEnd } },
         include: { zone: true, report: true },
         orderBy: [{ weekStartDate: "asc" }, { dayOfWeek: "asc" }, { startTime: "asc" }]
       }),
       prisma.user.findUnique({ where: { id: user.id }, select: { payoutDebtCents: true } }),
-      getMonthlyWorkedMinutesForUser(user.id),
-      findUserShiftToday(user.id)
+      getMonthlyWorkedMinutesForUser(user.id)
     ]);
-    return { shifts, payoutDebtCents: balanceRow?.payoutDebtCents ?? 0, monthlyMinutes, todayShift };
+    return { shifts, payoutDebtCents: balanceRow?.payoutDebtCents ?? 0, monthlyMinutes };
   });
   if (!loaded.ok) return <ServiceUnavailable scope="me" />;
-  const { shifts, payoutDebtCents, monthlyMinutes, todayShift } = loaded.data;
-  const showQrCheckIn = canStartShiftViaQrToday(todayShift);
+  const { shifts, payoutDebtCents, monthlyMinutes } = loaded.data;
   try {
     return (
       <div className="space-y-4">
         <MeProfileCard
           displayName={user.name}
-          telegramUsername={user.telegramUsername ?? "user"}
+          telegramUsername={user.telegramUsername ?? ""}
           photoUrl={resolveUserAvatarUrl(user)}
           hasCustomAvatar={Boolean(user.avatarUpdatedAt)}
           accentColor={user.color}
@@ -49,26 +46,6 @@ export default async function MePage() {
           initialLastName={user.lastName ?? ""}
           initialPhone={user.phone ?? ""}
         />
-        {showQrCheckIn ? (
-          <Link
-            href="/check-in"
-            className="-mt-2 card flex min-h-[52px] w-full max-w-full touch-manipulation items-center justify-between gap-3 transition-colors hover:bg-foreground/[0.04] active:opacity-90"
-            aria-label="Сканировать QR и начать смену"
-          >
-            <div className="flex min-w-0 flex-1 items-center gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-transparent">
-                <QrCode className="h-5 w-5 text-muted" aria-hidden />
-              </span>
-              <div>
-                <p className="text-lg font-semibold tracking-tight">Сканировать QR</p>
-                <p className="text-xs text-muted">
-                  Начать смену · {todayShift!.zone.name}
-                </p>
-              </div>
-            </div>
-            <ChevronRight className="h-6 w-6 shrink-0 text-muted" aria-hidden />
-          </Link>
-        ) : null}
         <div className="card">
           <p className="ui-section-kicker">Часы за месяц</p>
           <p className="mt-1 text-xs capitalize text-muted">{monthLabel}</p>

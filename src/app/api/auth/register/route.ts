@@ -12,13 +12,15 @@ import {
 } from "@/lib/phoneAuth";
 import { createSessionResponseFromPhoneUser, findUserByNormalizedPhoneAnyStatus } from "@/lib/passwordAuthSignIn";
 import { resolveRegistrationApprovalStatus } from "@/lib/testMode";
+import { assertTelegramUsernameFree, normalizeTelegramUsername, validateTelegramUsername } from "@/lib/telegramUsername";
 import { z } from "zod";
 
 const registerBodySchema = z.object({
   phone: z.string().trim().min(1),
   password: z.string().min(1),
   firstName: z.string().trim().min(2, "Имя минимум 2 символа"),
-  lastName: z.string().trim().min(2, "Фамилия минимум 2 символа")
+  lastName: z.string().trim().min(2, "Фамилия минимум 2 символа"),
+  telegramUsername: z.string().optional().default("")
 });
 
 export async function POST(req: Request) {
@@ -36,10 +38,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: msg }, { status: 400 });
     }
 
-    const { phone: phoneRaw, password, firstName, lastName } = parsed.data;
+    const { phone: phoneRaw, password, firstName, lastName, telegramUsername: telegramRaw } = parsed.data;
 
     if (!phoneRaw || !password) {
       return NextResponse.json({ error: "Укажите телефон и пароль" }, { status: 400 });
+    }
+
+    const telegramUsername = normalizeTelegramUsername(telegramRaw ?? "");
+    const telegramError = validateTelegramUsername(telegramUsername);
+    if (telegramError) {
+      return NextResponse.json({ error: telegramError }, { status: 400 });
     }
 
     const normalizedPhone = normalizePhone(phoneRaw);
@@ -69,6 +77,15 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Пользователь с таким телефоном уже зарегистрирован" }, { status: 409 });
       }
 
+      try {
+        await assertTelegramUsernameFree(telegramUsername, existing.id);
+      } catch (e) {
+        return NextResponse.json(
+          { error: e instanceof Error ? e.message : "Этот Telegram username уже занят" },
+          { status: 409 }
+        );
+      }
+
       const user = await prisma.user.update({
         where: { id: existing.id },
         data: {
@@ -81,6 +98,7 @@ export async function POST(req: Request) {
           role: isSuperAdminPhone(normalizedPhone) ? UserRole.SUPER_ADMIN : existing.role,
           isActive: true,
           profileCompleted: true,
+          telegramUsername: telegramUsername || null,
           ...(isSuperAdminPhone(normalizedPhone) ? { isManager: false } : {})
         },
         select: {
@@ -110,6 +128,15 @@ export async function POST(req: Request) {
       });
     }
 
+    try {
+      await assertTelegramUsernameFree(telegramUsername);
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "Этот Telegram username уже занят" },
+        { status: 409 }
+      );
+    }
+
     const user = await prisma.user.create({
       data: {
         name: displayName,
@@ -121,6 +148,7 @@ export async function POST(req: Request) {
         role,
         isActive: true,
         profileCompleted: true,
+        telegramUsername: telegramUsername || null,
         ...(role === UserRole.SUPER_ADMIN ? { isManager: false } : {})
       },
       select: {
