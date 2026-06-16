@@ -128,47 +128,13 @@ export async function verifySessionCookie(): Promise<VerifyCookie> {
   }
 }
 
-function isRichSessionPayload(p: Record<string, unknown>): p is SessionPayload & Record<string, unknown> {
-  return (
-    typeof p.userId === "string" &&
-    typeof p.role === "string" &&
-    typeof p.isManager === "boolean" &&
-    typeof p.profileCompleted === "boolean" &&
-    typeof p.telegramUsername === "string" &&
-    typeof p.name === "string"
-  );
-}
-
-/** Для RootLayout — без полного prisma.user там, где JWT уже богатый (новые сессии). */
+/** Для RootLayout — роль и флаги всегда из БД, чтобы смена прав подхватывалась без перелогина. */
 export async function getShellSessionUser(): Promise<ShellSessionUser | null> {
   try {
     const v = await verifySessionCookie();
     if (v.kind !== "ok") return null;
-    const p = v.payload;
-    const userId = p.userId as string | undefined;
-    const role = p.role as string | undefined;
-    if (!userId || !role) return null;
-
-    if (isRichSessionPayload(p)) {
-      try {
-        const u = await prisma.user.findUnique({
-          where: { id: userId },
-          select: { isActive: true }
-        });
-        if (!u?.isActive) return null;
-      } catch {
-        return null;
-      }
-      const tu = p.telegramUsername.trim().toLowerCase();
-      return {
-        id: userId,
-        role,
-        isManager: p.isManager,
-        profileCompleted: p.profileCompleted,
-        telegramUsername: tu.length > 0 ? tu : null,
-        name: p.name
-      };
-    }
+    const userId = v.payload.userId as string | undefined;
+    if (!userId) return null;
 
     try {
       const u = await prisma.user.findUnique({

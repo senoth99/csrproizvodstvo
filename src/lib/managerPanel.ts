@@ -1,8 +1,12 @@
 import { UserRole } from "@/lib/enums";
 
-/** Пункт «Панель» у суперадмина и у помеченных руководителей (отчёты, выплаты — не график). */
+/** Пункт «Панель» у суперадмина, админов и помеченных руководителей. */
 export function canOpenManagerPanel(user: { role: string; isManager: boolean }): boolean {
-  return user.role === UserRole.SUPER_ADMIN || user.isManager === true;
+  return (
+    user.role === UserRole.SUPER_ADMIN ||
+    user.role === UserRole.ADMIN ||
+    user.isManager === true
+  );
 }
 
 /** Назначить смену другому человеку на графике — ADMIN и SUPER_ADMIN. */
