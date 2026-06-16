@@ -57,7 +57,7 @@ async function handleLoginMessage(msg: TelegramMessage) {
       where: { id: challenge.id, status: "pending" },
       data: { status: "denied" }
     });
-    await telegramSendMessage(msg.chat.id, "Доступ не выдан. Обратитесь к администратору.");
+    await telegramSendMessage(msg.chat.id, "Доступ не выдан. Дождитесь одобрения регистрации.");
     return true;
   }
 

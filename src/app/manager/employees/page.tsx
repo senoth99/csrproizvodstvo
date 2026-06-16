@@ -2,7 +2,8 @@ import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { redirect } from "next/navigation";
 import { ServiceUnavailable } from "@/components/ServiceUnavailable";
-import { TelegramAccessForm } from "@/components/TelegramAccessForm";
+import { ManagerEmployeesClient } from "@/components/ManagerEmployeesClient";
+import { PendingApprovalsPanel } from "@/components/PendingApprovalsPanel";
 import { requireAuth } from "@/lib/auth";
 import { canOpenManagerPanel } from "@/lib/managerPanel";
 import { catchDb } from "@/lib/dbBoundary";
@@ -11,48 +12,49 @@ import { UserRole } from "@/lib/enums";
 import { ensureManagerDemoEmployeesIfEmpty } from "@/lib/managerDemoEmployees";
 import { resolveUserAvatarUrl } from "@/lib/userAvatar";
 
-function normalizedTelegramSuperUsername(): string {
-  return (process.env.TELEGRAM_ADMIN_USERNAME ?? "").trim().toLowerCase().replace(/^@/, "");
-}
-
 export default async function ManagerEmployeesPage() {
   const user = await requireAuth();
   if (!canOpenManagerPanel(user)) redirect("/schedule");
 
-  const telegramSuperUsername = normalizedTelegramSuperUsername();
-
   const loaded = await catchDb("manager/employees", async () => {
     await ensureManagerDemoEmployeesIfEmpty();
-    const [accessRows, accessUsers] = await Promise.all([
-      prisma.allowedTelegramUser.findMany({
-        where: { isActive: true, role: UserRole.EMPLOYEE },
-        orderBy: { createdAt: "desc" }
-      }),
+    const [employees, pendingUsers] = await Promise.all([
       prisma.user.findMany({
-        where: { telegramUsername: { not: null }, role: UserRole.EMPLOYEE },
+        where: {
+          role: UserRole.EMPLOYEE,
+          isActive: true,
+          approvalStatus: "APPROVED"
+        },
         orderBy: { name: "asc" },
         select: {
           id: true,
-          telegramUsername: true,
-          role: true,
+          name: true,
           firstName: true,
           lastName: true,
-          name: true,
-          isActive: true,
-          isManager: true,
+          phone: true,
+          telegramUsername: true,
           telegramPhotoUrl: true,
           avatarUpdatedAt: true,
-          color: true,
-          ndaSigned: true,
-          phone: true
+          color: true
+        }
+      }),
+      prisma.user.findMany({
+        where: { approvalStatus: "PENDING", isActive: true },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          telegramUsername: true,
+          createdAt: true
         }
       })
     ]);
-    return { accessRows, accessUsers };
+    return { employees, pendingUsers };
   });
   if (!loaded.ok) return <ServiceUnavailable scope="manager/employees" />;
 
-  const { accessRows, accessUsers } = loaded.data;
+  const { employees, pendingUsers } = loaded.data;
 
   return (
     <div className="space-y-6 pb-4">
@@ -67,33 +69,29 @@ export default async function ManagerEmployeesPage() {
       </div>
       <h1 className="text-2xl font-bold tracking-tight">Сотрудники</h1>
 
+      <PendingApprovalsPanel
+        users={pendingUsers.map((u) => ({
+          id: u.id,
+          name: u.name,
+          phone: u.phone,
+          telegramUsername: u.telegramUsername,
+          createdAt: u.createdAt.toISOString()
+        }))}
+      />
+
       <section className="space-y-2">
-        <h2 className="text-sm font-bold uppercase tracking-display text-muted">Доступ по Telegram</h2>
-        <TelegramAccessForm
-          variant="manager"
-          telegramSuperUsername={telegramSuperUsername}
-          rows={accessRows.map((r) => ({
-            id: r.id,
-            username: r.username,
-            role: r.role,
-            isActive: r.isActive,
-            isManager: r.isManager
-          }))}
-          users={accessUsers.map((u) => ({
+        <h2 className="text-sm font-bold uppercase tracking-display text-muted">В штате</h2>
+        <ManagerEmployeesClient
+          employees={employees.map((u) => ({
             id: u.id,
-            username: (u.telegramUsername ?? "").toLowerCase(),
-            role: u.role,
-            firstName: u.firstName ?? "",
-            lastName: u.lastName ?? "",
             name: u.name,
-            isActive: u.isActive,
-            isManager: u.isManager,
-            photoUrl: resolveUserAvatarUrl(u),
-            color: u.color,
-            ndaSigned: u.ndaSigned,
-            phone: u.phone
+            firstName: u.firstName,
+            lastName: u.lastName,
+            phone: u.phone,
+            telegramUsername: u.telegramUsername,
+            telegramPhotoUrl: resolveUserAvatarUrl(u),
+            color: u.color
           }))}
-          superAdminFallback={null}
         />
       </section>
     </div>

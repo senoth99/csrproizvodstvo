@@ -119,7 +119,8 @@ export async function POST(req: Request) {
           type: "USER_REGISTRATION_PENDING",
           title: "Новая регистрация",
           body: `${displayName}, тел. +${normalizedPhone} — ожидает одобрения`,
-          pushUrl: "/admin/users"
+          pushUrl: "/manager/employees",
+          payload: { userId: user.id }
         }).catch((e) => console.warn("[api/auth/register] notify admins:", e));
       }
 
@@ -165,12 +166,13 @@ export async function POST(req: Request) {
     });
 
     if (approvalStatus === "PENDING") {
-      await notifyAdminRoleUsers({
-        type: "USER_REGISTRATION_PENDING",
-        title: "Новая регистрация",
-        body: `${displayName}, тел. +${normalizedPhone} — ожидает одобрения`,
-        pushUrl: "/admin/users"
-      }).catch((e) => console.warn("[api/auth/register] notify admins:", e));
+        await notifyAdminRoleUsers({
+          type: "USER_REGISTRATION_PENDING",
+          title: "Новая регистрация",
+          body: `${displayName}, тел. +${normalizedPhone} — ожидает одобрения`,
+          pushUrl: "/manager/employees",
+          payload: { userId: user.id }
+        }).catch((e) => console.warn("[api/auth/register] notify admins:", e));
     }
 
     return createSessionResponseFromPhoneUser(user, {

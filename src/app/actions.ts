@@ -54,10 +54,6 @@ import type {
 } from "@/lib/brigadeAssignment";
 import { z } from "zod";
 
-function normalizedTelegramSuperAdminUsername(): string {
-  return (process.env.TELEGRAM_ADMIN_USERNAME ?? "").trim().toLowerCase().replace(/^@/, "");
-}
-
 function scheduleAdminsEmployeeShiftNotify(input: {
   type:
     | typeof AppNotificationType.SHIFT_ADDED_BY_EMPLOYEE
@@ -76,10 +72,10 @@ function scheduleAdminsEmployeeShiftNotify(input: {
   });
 }
 
-async function requireSuperAdminOrManagerForTelegramAccess() {
+async function requireRegistrationApprover() {
   const actor = await requireAuth();
-  if (actor.role === UserRole.SUPER_ADMIN || canOpenManagerPanel(actor)) {
-    return { actor, isSuper: actor.role === UserRole.SUPER_ADMIN };
+  if (actor.role === UserRole.SUPER_ADMIN || actor.role === UserRole.ADMIN || canOpenManagerPanel(actor)) {
+    return actor;
   }
   throw new Error("Недостаточно прав.");
 }
@@ -1467,258 +1463,6 @@ export async function completeWelcomeProfile(input: unknown) {
   revalidatePath("/me");
 }
 
-export async function addAllowedTelegramUser(input: unknown) {
-  const { actor, isSuper } = await requireSuperAdminOrManagerForTelegramAccess();
-  const schema = z.object({
-    username: z
-      .string()
-      .trim()
-      .min(3, "username слишком короткий")
-      .toLowerCase()
-      .transform((v) => v.replace(/^@/, "")),
-    isManager: z.boolean().optional().default(false)
-  });
-  const data = schema.parse(input);
-  const superAdminUsername = normalizedTelegramSuperAdminUsername();
-  if (!isSuper && superAdminUsername && data.username === superAdminUsername) {
-    throw new Error("Этот логин недоступен для добавления из панели сотрудников.");
-  }
-  const role =
-    isSuper && superAdminUsername && data.username === superAdminUsername ? UserRole.SUPER_ADMIN : UserRole.EMPLOYEE;
-  const managerFlag = role === UserRole.SUPER_ADMIN ? false : Boolean(data.isManager);
-  if (role === UserRole.SUPER_ADMIN) {
-    const existingSuperAdmin = await prisma.allowedTelegramUser.findFirst({
-      where: { role: UserRole.SUPER_ADMIN, username: { not: data.username } }
-    });
-    if (existingSuperAdmin) throw new Error("Суперадмин может быть только один.");
-  }
-  const usersForMatch = await prisma.user.findMany({
-    where: { telegramUsername: { not: null } },
-    select: { id: true, telegramId: true, telegramUsername: true }
-  });
-  const matchUser = usersForMatch.find((u) => (u.telegramUsername ?? "").toLowerCase() === data.username);
-
-  const row = await prisma.allowedTelegramUser.upsert({
-    where: { username: data.username },
-    update: {
-      role,
-      isActive: true,
-      isManager: managerFlag,
-      ...(matchUser?.telegramId ? { telegramId: matchUser.telegramId } : {})
-    },
-    create: {
-      username: data.username,
-      role,
-      isActive: true,
-      isManager: managerFlag,
-      telegramId: matchUser?.telegramId ?? null
-    }
-  });
-  await prisma.user.updateMany({
-    where: { telegramUsername: data.username, role: UserRole.EMPLOYEE },
-    data: { isActive: true }
-  });
-  const userIdsToFlag = usersForMatch
-    .filter((u) => (u.telegramUsername ?? "").toLowerCase() === data.username)
-    .map((u) => u.id);
-  if (userIdsToFlag.length > 0) {
-    await prisma.user.updateMany({
-      where: { id: { in: userIdsToFlag } },
-      data: { isManager: managerFlag }
-    });
-  }
-  await writeAuditLog({
-    actorUserId: actor.id,
-    action: "ALLOW_TELEGRAM_USER",
-    entityType: "AllowedTelegramUser",
-    entityId: row.id,
-    payload: { ...data, role, isManager: managerFlag }
-  });
-  revalidatePath("/manager/employees");
-  revalidatePath("/manager");
-}
-
-export async function adminSetTelegramUserManager(input: unknown) {
-  const { actor, isSuper } = await requireSuperAdminOrManagerForTelegramAccess();
-  const schema = z.object({
-    username: z
-      .string()
-      .trim()
-      .toLowerCase()
-      .transform((v) => v.replace(/^@/, "")),
-    isManager: z.boolean()
-  });
-  const data = schema.parse(input);
-  const superAdminUsername = normalizedTelegramSuperAdminUsername();
-  if (data.username === superAdminUsername) throw new Error("Флаг не нужен для суперадмина.");
-  const allow = await prisma.allowedTelegramUser.findFirst({
-    where: { username: data.username }
-  });
-  if (!allow) throw new Error("Запись доступа для этого username не найдена — добавьте пользователя снова.");
-  if (!isSuper && allow.role !== UserRole.EMPLOYEE) {
-    throw new Error("Недостаточно прав.");
-  }
-  await prisma.allowedTelegramUser.updateMany({
-    where: { username: data.username },
-    data: { isManager: data.isManager }
-  });
-  await prisma.user.updateMany({
-    where: { telegramUsername: data.username },
-    data: { isManager: data.isManager }
-  });
-  await writeAuditLog({
-    actorUserId: actor.id,
-    action: data.isManager ? "SET_MANAGER" : "UNSET_MANAGER",
-    entityType: "AllowedTelegramUser",
-    entityId: data.username,
-    payload: data
-  });
-  revalidatePath("/manager/employees");
-  revalidatePath("/manager");
-}
-
-export async function toggleAllowedTelegramUser(id: string, active: boolean) {
-  const actor = await requireRole([UserRole.SUPER_ADMIN]);
-  if (active) {
-    await prisma.allowedTelegramUser.update({
-      where: { id },
-      data: { isActive: true }
-    });
-  } else {
-    const allowed = await prisma.allowedTelegramUser.findUnique({
-      where: { id },
-      select: { username: true }
-    });
-    await prisma.allowedTelegramUser.update({
-      where: { id },
-      data: { isActive: false, telegramId: null }
-    });
-    if (allowed?.username) {
-      await prisma.user.updateMany({
-        where: { telegramUsername: allowed.username, role: { not: UserRole.SUPER_ADMIN } },
-        data: { isActive: false }
-      });
-    }
-  }
-  await writeAuditLog({
-    actorUserId: actor.id,
-    action: active ? "ENABLE_TELEGRAM_USER" : "DISABLE_TELEGRAM_USER",
-    entityType: "AllowedTelegramUser",
-    entityId: id
-  });
-  revalidatePath("/manager/employees");
-}
-
-export async function adminUpdateUserProfile(input: unknown) {
-  const { actor, isSuper } = await requireSuperAdminOrManagerForTelegramAccess();
-  const schema = z.object({
-    userId: z.string().cuid(),
-    firstName: z.string().trim().min(2, "Имя минимум 2 символа"),
-    lastName: z.string().trim().min(2, "Фамилия минимум 2 символа"),
-    phone: z
-      .string()
-      .trim()
-      .optional()
-      .refine((v) => !v || isValidPhone(v), "Формат: +7 и 10 цифр")
-      .transform((v) => (v ? normalizePhoneInput(v) : undefined))
-  });
-  const data = schema.parse(input);
-  if (!isSuper) {
-    const target = await prisma.user.findUnique({
-      where: { id: data.userId },
-      select: { role: true }
-    });
-    if (!target || target.role !== UserRole.EMPLOYEE) {
-      throw new Error("Можно редактировать только профили сотрудников.");
-    }
-  }
-  const name = `${data.lastName} ${data.firstName}`.trim();
-  await prisma.user.update({
-    where: { id: data.userId },
-    data: {
-      firstName: data.firstName,
-      lastName: data.lastName,
-      name,
-      ...(data.phone !== undefined ? { phone: data.phone } : {})
-    }
-  });
-  await writeAuditLog({
-    actorUserId: actor.id,
-    action: "ADMIN_UPDATE_USER_PROFILE",
-    entityType: "User",
-    entityId: data.userId,
-    payload: data
-  });
-  revalidatePath("/manager/employees");
-}
-
-export async function revokeTelegramAccessByUsername(usernameInput: string) {
-  const { actor, isSuper } = await requireSuperAdminOrManagerForTelegramAccess();
-  const username = usernameInput.trim().toLowerCase().replace(/^@/, "");
-  const superAdminUsername = normalizedTelegramSuperAdminUsername();
-  if (username === superAdminUsername) throw new Error("Нельзя отзывать доступ у суперадмина.");
-  if (!isSuper) {
-    const allow = await prisma.allowedTelegramUser.findFirst({ where: { username } });
-    if (!allow || allow.role !== UserRole.EMPLOYEE) {
-      throw new Error("Отозвать можно только доступ сотрудника.");
-    }
-  }
-  await prisma.allowedTelegramUser.updateMany({
-    where: { username },
-    data: { isActive: false, telegramId: null }
-  });
-  await prisma.user.updateMany({
-    where: { telegramUsername: username, role: { not: UserRole.SUPER_ADMIN } },
-    data: { isActive: false }
-  });
-  await writeAuditLog({
-    actorUserId: actor.id,
-    action: "REVOKE_TELEGRAM_ACCESS_BY_USERNAME",
-    entityType: "AllowedTelegramUser",
-    entityId: username
-  });
-  revalidatePath("/manager/employees");
-}
-
-export async function deleteEmployeeByUsername(usernameInput: string) {
-  const { actor, isSuper } = await requireSuperAdminOrManagerForTelegramAccess();
-  const username = usernameInput.trim().toLowerCase().replace(/^@/, "");
-  const superAdminUsername = normalizedTelegramSuperAdminUsername();
-  if (username === superAdminUsername) throw new Error("Суперадмина нельзя удалить.");
-
-  const allow = await prisma.allowedTelegramUser.findFirst({ where: { username } });
-  if (!isSuper && allow && allow.role !== UserRole.EMPLOYEE) {
-    throw new Error("Удалить можно только сотрудника.");
-  }
-
-  const candidates = await prisma.user.findMany({
-    where: { telegramUsername: { not: null } },
-    select: { id: true, role: true, telegramUsername: true }
-  });
-  const targets = candidates.filter((u) => (u.telegramUsername ?? "").toLowerCase() === username);
-  if (targets.some((u) => u.role === UserRole.SUPER_ADMIN)) throw new Error("Суперадмина нельзя удалить.");
-  if (!isSuper && targets.some((u) => u.role !== UserRole.EMPLOYEE)) {
-    throw new Error("Удалить можно только сотрудника.");
-  }
-
-  await prisma.$transaction(async (tx) => {
-    await tx.allowedTelegramUser.deleteMany({ where: { username } });
-    if (targets.length > 0) {
-      await tx.user.deleteMany({
-        where: { id: { in: targets.map((t) => t.id) }, role: { not: UserRole.SUPER_ADMIN } }
-      });
-    }
-  });
-
-  await writeAuditLog({
-    actorUserId: actor.id,
-    action: "DELETE_EMPLOYEE_BY_USERNAME",
-    entityType: "User",
-    entityId: username
-  });
-  revalidatePath("/manager/employees");
-}
-
 export async function getAdminZoneChecklists() {
   await requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]);
   await ensureBrigadeZones();
@@ -1812,7 +1556,7 @@ export async function deleteZoneChecklistItem(id: string) {
 }
 
 export async function approveUserRegistration(userId: string) {
-  const actor = await requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]);
+  const actor = await requireRegistrationApprover();
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { id: true, name: true, phone: true, approvalStatus: true, isActive: true }
@@ -1842,10 +1586,11 @@ export async function approveUserRegistration(userId: string) {
   });
 
   revalidatePath("/admin/users");
+  revalidatePath("/manager/employees");
 }
 
 export async function rejectUserRegistration(userId: string) {
-  const actor = await requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]);
+  const actor = await requireRegistrationApprover();
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { id: true, name: true, phone: true, approvalStatus: true }
@@ -1876,4 +1621,5 @@ export async function rejectUserRegistration(userId: string) {
   });
 
   revalidatePath("/admin/users");
+  revalidatePath("/manager/employees");
 }
