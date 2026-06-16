@@ -13,19 +13,21 @@ import { formatDateRu } from "@/lib/utils";
 import { resolveUserAvatarUrl } from "@/lib/userAvatar";
 
 export default async function ManagerEmployeeDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const user = await requireAuth();
-  if (!canOpenManagerPanel(user)) redirect("/schedule");
+  const viewer = await requireAuth();
+  if (!canOpenManagerPanel(viewer)) redirect("/schedule");
 
   const { id } = await params;
+  const canManageAdminRole = viewer.role === UserRole.SUPER_ADMIN;
 
   const loaded = await catchDb(`manager/employees/${id}`, async () => {
     const userRow = await prisma.user.findFirst({
-      where: { id, role: UserRole.EMPLOYEE },
+      where: { id, role: { in: [UserRole.EMPLOYEE, UserRole.ADMIN] }, isActive: true },
       select: {
         id: true,
         name: true,
         firstName: true,
         lastName: true,
+        role: true,
         telegramUsername: true,
         telegramPhotoUrl: true,
         avatarUpdatedAt: true,
@@ -80,6 +82,7 @@ export default async function ManagerEmployeeDetailPage({ params }: { params: Pr
     name: row.name,
     firstName: row.firstName,
     lastName: row.lastName,
+    role: row.role,
     telegramUsername: row.telegramUsername,
     telegramPhotoUrl: resolveUserAvatarUrl(row),
     color: row.color,
@@ -116,6 +119,7 @@ export default async function ManagerEmployeeDetailPage({ params }: { params: Pr
 
       <ManagerEmployeeProfileClient
         employee={employee}
+        canManageAdminRole={canManageAdminRole}
         arrivalHistory={arrivalHistory}
         likesHistory={likesHistory}
       />

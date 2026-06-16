@@ -21,16 +21,17 @@ export default async function ManagerEmployeesPage() {
     const [employees, pendingUsers] = await Promise.all([
       prisma.user.findMany({
         where: {
-          role: UserRole.EMPLOYEE,
+          role: { in: [UserRole.EMPLOYEE, UserRole.ADMIN] },
           isActive: true,
           approvalStatus: "APPROVED"
         },
-        orderBy: { name: "asc" },
+        orderBy: [{ role: "asc" }, { name: "asc" }],
         select: {
           id: true,
           name: true,
           firstName: true,
           lastName: true,
+          role: true,
           phone: true,
           telegramUsername: true,
           telegramPhotoUrl: true,
@@ -87,6 +88,7 @@ export default async function ManagerEmployeesPage() {
             name: u.name,
             firstName: u.firstName,
             lastName: u.lastName,
+            role: u.role,
             phone: u.phone,
             telegramUsername: u.telegramUsername,
             telegramPhotoUrl: resolveUserAvatarUrl(u),

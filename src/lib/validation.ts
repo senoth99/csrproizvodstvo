@@ -65,7 +65,8 @@ export const reportSchema = z
     const [eh, em] = data.workEndTime.split(":").map(Number);
     const startM = sh * 60 + sm;
     let endM = eh * 60 + em;
-    if (endM <= startM) endM += 24 * 60;
+    if (startM === endM) return;
+    if (endM < startM) endM += 24 * 60;
     const diff = endM - startM;
     if (diff < 1) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Время окончания должно быть позже начала.", path: ["workEndTime"] });
@@ -121,7 +122,8 @@ export const updateReportSchema = z
       const [eh, em] = data.workEndTime.split(":").map(Number);
       const startM = sh * 60 + sm;
       let endM = eh * 60 + em;
-      if (endM <= startM) endM += 24 * 60;
+      if (startM === endM) return;
+      if (endM < startM) endM += 24 * 60;
       const diff = endM - startM;
       if (diff < 1 || diff > 24 * 60) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Проверьте время начала и окончания.", path: ["workEndTime"] });

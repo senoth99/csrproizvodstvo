@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { UserAvatar } from "@/components/UserAvatar";
+import { RoleBadge } from "@/components/RoleBadge";
 import { formatPhoneDisplay } from "@/lib/formatPhone";
+import { UserRole } from "@/lib/enums";
 
 export type ManagerEmployeeListItem = {
   id: string;
@@ -11,6 +13,7 @@ export type ManagerEmployeeListItem = {
   lastName: string | null;
   phone: string | null;
   telegramUsername: string | null;
+  role?: string;
   /** Фото из Telegram после входа */
   telegramPhotoUrl?: string | null;
   color: string;
@@ -51,7 +54,10 @@ export function ManagerEmployeesClient({ employees }: Props) {
               className="pointer-events-none shrink-0"
             />
             <div className="pointer-events-none min-w-0 flex-1">
-              <p className="truncate font-semibold">{emp.name}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="truncate font-semibold">{emp.name}</p>
+                {emp.role === UserRole.ADMIN ? <RoleBadge role={UserRole.ADMIN} /> : null}
+              </div>
               <p className="truncate text-xs text-muted">
                 {emp.telegramUsername ? `@${emp.telegramUsername}` : "Нет Telegram-ника"}
                 {emp.phone ? ` · ${formatPhoneDisplay(emp.phone)}` : ""}

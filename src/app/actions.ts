@@ -91,6 +91,11 @@ const updateEmployeeNdaSignedSchema = z.object({
   ndaSigned: z.boolean()
 });
 
+const superAdminSetEmployeeAdminRoleSchema = z.object({
+  userId: z.string().cuid(),
+  isAdmin: z.boolean()
+});
+
 const managerRecordPayoutSchema = z.object({
   userId: z.string().cuid(),
   amountRub: z.coerce.number().finite().positive("Сумма выплаты должна быть больше нуля")
@@ -727,7 +732,9 @@ export async function updateEmployeeNdaSigned(input: unknown) {
     where: { id: data.userId },
     select: { id: true, role: true }
   });
-  if (!target || target.role !== UserRole.EMPLOYEE) throw new Error("Сотрудник не найден.");
+  if (!target || (target.role !== UserRole.EMPLOYEE && target.role !== UserRole.ADMIN)) {
+    throw new Error("Сотрудник не найден.");
+  }
 
   await prisma.user.update({
     where: { id: data.userId },
@@ -742,6 +749,41 @@ export async function updateEmployeeNdaSigned(input: unknown) {
   });
   revalidatePath("/manager/employees");
   revalidatePath(`/manager/employees/${data.userId}`);
+}
+
+export async function superAdminSetEmployeeAdminRole(input: unknown) {
+  const actor = await requireRole([UserRole.SUPER_ADMIN]);
+  const data = superAdminSetEmployeeAdminRoleSchema.parse(input);
+
+  const target = await prisma.user.findUnique({
+    where: { id: data.userId },
+    select: { id: true, role: true }
+  });
+  if (!target) throw new Error("Пользователь не найден.");
+  if (target.role === UserRole.SUPER_ADMIN) throw new Error("Нельзя изменить роль суперадмина.");
+
+  const nextRole = data.isAdmin ? UserRole.ADMIN : UserRole.EMPLOYEE;
+  if (target.role === nextRole) return;
+
+  await prisma.user.update({
+    where: { id: data.userId },
+    data: {
+      role: nextRole,
+      ...(nextRole === UserRole.ADMIN ? { isManager: false } : {})
+    }
+  });
+
+  await writeAuditLog({
+    actorUserId: actor.id,
+    action: data.isAdmin ? "GRANT_ADMIN_ROLE" : "REVOKE_ADMIN_ROLE",
+    entityType: "User",
+    entityId: data.userId,
+    payload: { role: nextRole }
+  });
+
+  revalidatePath("/manager/employees");
+  revalidatePath(`/manager/employees/${data.userId}`);
+  revalidatePath("/admin/users");
 }
 
 export async function managerRecordPayout(input: unknown) {
@@ -1048,11 +1090,28 @@ export async function submitShiftReport(input: unknown) {
     throw new Error("Фото рабочего места не найдено. Сделайте снимок и загрузите снова.");
   }
 
-  const workedMinutes = computeWorkedMinutes(data.workStartTime, data.workEndTime);
-  const workStartedAt = toDateTime(shift.weekStartDate, shift.dayOfWeek, data.workStartTime);
-  let workEndedAt = toDateTime(shift.weekStartDate, shift.dayOfWeek, data.workEndTime);
-  if (workEndedAt.getTime() <= workStartedAt.getTime()) {
-    workEndedAt = addDays(workEndedAt, 1);
+  const timeLog = await prisma.shiftTimeLog.findUnique({
+    where: { shiftId: data.shiftId },
+    select: { startedAt: true }
+  });
+
+  let workEndTime = data.workEndTime;
+  let workedMinutes: number;
+  let workStartedAt: Date;
+  let workEndedAt: Date;
+
+  if (timeLog?.startedAt && data.workStartTime === data.workEndTime) {
+    workStartedAt = timeLog.startedAt;
+    workEndedAt = new Date();
+    workedMinutes = Math.max(1, Math.ceil((workEndedAt.getTime() - workStartedAt.getTime()) / 60000));
+    workEndTime = formatTimeHm(workEndedAt);
+  } else {
+    workedMinutes = computeWorkedMinutes(data.workStartTime, data.workEndTime);
+    workStartedAt = toDateTime(shift.weekStartDate, shift.dayOfWeek, data.workStartTime);
+    workEndedAt = toDateTime(shift.weekStartDate, shift.dayOfWeek, data.workEndTime);
+    if (workEndedAt.getTime() < workStartedAt.getTime()) {
+      workEndedAt = addDays(workEndedAt, 1);
+    }
   }
 
   const { reportIdForPath } = await prisma.$transaction(async (tx) => {
@@ -1094,14 +1153,14 @@ export async function submitShiftReport(input: unknown) {
         text: data.text.trim(),
         workplacePhotoPath: expectedPhotoPath,
         workStartTime: data.workStartTime,
-        workEndTime: data.workEndTime,
+        workEndTime,
         workedMinutes
       },
       update: {
         text: data.text.trim(),
         workplacePhotoPath: expectedPhotoPath,
         workStartTime: data.workStartTime,
-        workEndTime: data.workEndTime,
+        workEndTime,
         workedMinutes,
         status: ShiftReportStatus.PENDING_REVIEW,
         acceptedAt: null,
@@ -1227,7 +1286,7 @@ export async function updateMyShiftReport(input: unknown) {
     updateData.workedMinutes = workedMinutes;
     workStartedAt = toDateTime(report.shift.weekStartDate, report.shift.dayOfWeek, startTime);
     workEndedAt = toDateTime(report.shift.weekStartDate, report.shift.dayOfWeek, data.workEndTime);
-    if (workEndedAt.getTime() <= workStartedAt.getTime()) {
+    if (workEndedAt.getTime() < workStartedAt.getTime()) {
       workEndedAt = addDays(workEndedAt, 1);
     }
   }

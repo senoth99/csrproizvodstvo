@@ -16,13 +16,14 @@ export function hmToMinutes(time: string): number | null {
   return p.hours * 60 + p.minutes;
 }
 
-/** Длительность в минутах; если конец ≤ начала — смена через полночь. */
+/** Длительность в минутах; если конец < начала — смена через полночь. */
 export function computeWorkedMinutes(workStartTime: string, workEndTime: string): number {
   const start = hmToMinutes(workStartTime);
   const end = hmToMinutes(workEndTime);
   if (start == null || end == null) throw new Error("Некорректное время работы.");
+  if (start === end) return 1;
   let diff = end - start;
-  if (diff <= 0) diff += 24 * 60;
+  if (diff < 0) diff += 24 * 60;
   if (diff > 24 * 60) throw new Error("Длительность смены не может превышать 24 часа.");
   if (diff < 1) throw new Error("Укажите время окончания позже времени начала.");
   return diff;
