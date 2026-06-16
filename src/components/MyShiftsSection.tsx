@@ -55,10 +55,7 @@ export function MyShiftsSection({ weekShifts }: { weekShifts: ShiftItem[] }) {
       s.status === ShiftStatus.PLANNED && isToday && !reportPending && !reportAccepted;
 
     return (
-      <div
-        key={s.id}
-        className={`card space-y-2${canSubmitReport ? " relative pb-12 pr-12" : ""}`}
-      >
+      <div key={s.id} className="card space-y-2">
         <div className="flex items-center justify-between gap-2 text-sm font-semibold">
           <div className="flex items-center gap-2">
             <CalendarDays size={16} className="text-muted" aria-hidden />
@@ -84,9 +81,24 @@ export function MyShiftsSection({ weekShifts }: { weekShifts: ShiftItem[] }) {
         </div>
 
         {isInProgress && !reportPending && !reportAccepted ? (
-          <p className="rounded-sm border border-foreground/20 bg-foreground/[0.06] px-3 py-2 text-center text-[10px] font-bold uppercase tracking-display text-foreground">
-            Смена идёт
-          </p>
+          canSubmitReport ? (
+            <div className="flex items-stretch gap-2">
+              <p className="flex min-w-0 flex-1 items-center justify-center rounded-sm border border-foreground/20 bg-foreground/[0.06] px-3 py-2.5 text-center text-[10px] font-bold uppercase tracking-display text-foreground">
+                Смена идёт
+              </p>
+              <CompleteShiftReportDialog
+                shiftId={s.id}
+                headline={shiftHeadline}
+                defaultStartTime={s.startTime}
+                defaultEndTime={s.endTime}
+                inlineTrigger
+              />
+            </div>
+          ) : (
+            <p className="rounded-sm border border-foreground/20 bg-foreground/[0.06] px-3 py-2.5 text-center text-[10px] font-bold uppercase tracking-display text-foreground">
+              Смена идёт
+            </p>
+          )
         ) : null}
 
         {showQrHint ? (
@@ -109,13 +121,6 @@ export function MyShiftsSection({ weekShifts }: { weekShifts: ShiftItem[] }) {
             <p className="rounded-sm border border-accent/45 bg-accent/15 px-3 py-2.5 text-center text-[10px] font-bold uppercase tracking-display text-foreground">
               Смена принята
             </p>
-          ) : canSubmitReport ? (
-            <CompleteShiftReportDialog
-              shiftId={s.id}
-              headline={shiftHeadline}
-              defaultStartTime={s.startTime}
-              defaultEndTime={s.endTime}
-            />
           ) : null
         ) : null}
       </div>

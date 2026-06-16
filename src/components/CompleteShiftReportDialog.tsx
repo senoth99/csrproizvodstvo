@@ -39,12 +39,15 @@ export function CompleteShiftReportDialog({
   shiftId,
   headline,
   defaultStartTime = "",
-  defaultEndTime = ""
+  defaultEndTime = "",
+  inlineTrigger = false
 }: {
   shiftId: string;
   headline: string;
   defaultStartTime?: string;
   defaultEndTime?: string;
+  /** В строке «Смена идёт» — без absolute, чтобы не накладывалось на бейдж */
+  inlineTrigger?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -245,23 +248,62 @@ export function CompleteShiftReportDialog({
     }
   };
 
+  const reportActions = (
+    <div className="grid w-full grid-cols-2 gap-3 [grid-template-columns:repeat(2,minmax(0,1fr))]">
+      <button type="button" className="btn-secondary w-full min-h-11 touch-manipulation" disabled={pending || photoUploading} onClick={close}>
+        Отменить
+      </button>
+      <button
+        type="submit"
+        className="btn-primary w-full min-h-11 touch-manipulation"
+        disabled={pending || photoUploading || !workplacePhotoPath}
+      >
+        {pending ? "Отправляем…" : coworkersLoading || coworkers.length > 0 ? "Далее" : "Завершить"}
+      </button>
+    </div>
+  );
+
+  const likeActions = (
+    <div className="grid w-full grid-cols-2 gap-3 [grid-template-columns:repeat(2,minmax(0,1fr))]">
+      <button
+        type="button"
+        className="btn-secondary w-full min-h-11 touch-manipulation"
+        disabled={pending}
+        onClick={() => {
+          setError("");
+          setStep("report");
+        }}
+      >
+        Назад
+      </button>
+      <button
+        type="button"
+        className="btn-primary w-full min-h-11 touch-manipulation"
+        disabled={pending || coworkersLoading}
+        onClick={() => submitReport(likedUserId)}
+      >
+        {pending ? "Отправляем…" : likedUserId ? "Отправить" : "Пропустить"}
+      </button>
+    </div>
+  );
+
   const overlay =
     open && mounted
       ? createPortal(
           <div
-            className="fixed inset-0 z-[220] flex items-center justify-center bg-background/80 p-4 backdrop-blur-[2px]"
+            className="fixed inset-0 z-[220] flex flex-col bg-background sm:items-center sm:justify-center sm:bg-background/80 sm:p-4 sm:backdrop-blur-[2px]"
             role="presentation"
             style={{ overscrollBehavior: "contain" }}
             onClick={() => !pending && close()}
           >
             <div
-              className="max-h-[min(90dvh,640px)] w-full max-w-lg overflow-y-auto overflow-x-hidden rounded-lg border border-border bg-background"
+              className="flex min-h-0 w-full flex-1 flex-col overflow-hidden border-border bg-background sm:max-h-[min(90dvh,640px)] sm:max-w-lg sm:flex-none sm:rounded-lg sm:border"
               role="dialog"
               aria-modal
               aria-labelledby="shift-report-title"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="border-b border-border/80 px-4 py-4">
+              <div className="shrink-0 border-b border-border/80 px-4 pb-4 pt-[max(1rem,env(safe-area-inset-top))] sm:pt-4">
                 <p id="shift-report-title" className="text-base font-medium tracking-tight">
                   {step === "like" ? "Отметить коллегу" : "Отчёт по смене"}
                 </p>
@@ -280,13 +322,14 @@ export function CompleteShiftReportDialog({
 
               {step === "report" ? (
               <form
-                className="space-y-4 px-4 py-4"
+                className="flex min-h-0 flex-1 flex-col"
                 onSubmit={(e) => {
                   e.preventDefault();
                   handleReportStepPrimary();
                 }}
               >
-                <div className="grid grid-cols-2 gap-3">
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className="mb-2 block text-sm font-medium text-foreground" htmlFor={`work-start-${shiftId}`}>
                       Начало работы
@@ -369,10 +412,10 @@ export function CompleteShiftReportDialog({
                     disabled={pending || photoUploading}
                     onChange={(e) => void handlePhotoSelected(e.target.files?.[0])}
                   />
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <button
                       type="button"
-                      className="btn-secondary inline-flex items-center gap-2"
+                      className="btn-secondary inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-2"
                       disabled={pending || photoUploading}
                       onClick={() => cameraInputRef.current?.click()}
                     >
@@ -381,7 +424,7 @@ export function CompleteShiftReportDialog({
                     </button>
                     <button
                       type="button"
-                      className="btn-secondary inline-flex items-center gap-2"
+                      className="btn-secondary inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-2"
                       disabled={pending || photoUploading}
                       onClick={() => galleryInputRef.current?.click()}
                     >
@@ -389,7 +432,7 @@ export function CompleteShiftReportDialog({
                       Из галереи
                     </button>
                     {workplacePhotoPath ? (
-                      <span className="w-full text-xs text-muted sm:w-auto">Фото загружено</span>
+                      <span className="text-xs text-muted sm:col-span-2">Фото загружено</span>
                     ) : null}
                   </div>
                   {photoPreviewUrl ? (
@@ -439,26 +482,15 @@ export function CompleteShiftReportDialog({
                 ) : null}
 
                 {error ? <p className="text-sm font-medium text-foreground/85">{error}</p> : null}
+                </div>
 
-                <div className="grid w-full grid-cols-2 gap-3 pt-1 [grid-template-columns:repeat(2,minmax(0,1fr))]">
-                  <button type="button" className="btn-secondary w-full" disabled={pending || photoUploading} onClick={close}>
-                    Отменить
-                  </button>
-                  <button
-                    type="submit"
-                    className="btn-primary w-full"
-                    disabled={pending || photoUploading || !workplacePhotoPath}
-                  >
-                    {pending
-                      ? "Отправляем…"
-                      : coworkersLoading || coworkers.length > 0
-                        ? "Далее"
-                        : "Завершить"}
-                  </button>
+                <div className="shrink-0 border-t border-border/80 bg-background px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+                  {reportActions}
                 </div>
               </form>
               ) : (
-              <div className="space-y-4 px-4 py-4">
+              <div className="flex min-h-0 flex-1 flex-col">
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4">
                 {coworkersLoading ? (
                   <p className="py-8 text-center text-sm text-muted">Загружаем коллег на смене…</p>
                 ) : coworkers.length > 0 ? (
@@ -505,27 +537,10 @@ export function CompleteShiftReportDialog({
                 )}
 
                 {error ? <p className="text-sm font-medium text-foreground/85">{error}</p> : null}
+                </div>
 
-                <div className="grid w-full grid-cols-2 gap-3 pt-1 [grid-template-columns:repeat(2,minmax(0,1fr))]">
-                  <button
-                    type="button"
-                    className="btn-secondary w-full"
-                    disabled={pending}
-                    onClick={() => {
-                      setError("");
-                      setStep("report");
-                    }}
-                  >
-                    Назад
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-primary w-full"
-                    disabled={pending || coworkersLoading}
-                    onClick={() => submitReport(likedUserId)}
-                  >
-                    {pending ? "Отправляем…" : likedUserId ? "Отправить" : "Пропустить"}
-                  </button>
+                <div className="shrink-0 border-t border-border/80 bg-background px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+                  {likeActions}
                 </div>
               </div>
               )}
@@ -539,8 +554,13 @@ export function CompleteShiftReportDialog({
     <>
       <button
         type="button"
-        className="absolute bottom-3 right-3 z-10 flex min-h-11 min-w-11 touch-manipulation items-center justify-center rounded-full border border-border bg-background text-foreground transition-colors hover:bg-foreground/[0.06]"
-        aria-label="Отметить смену выполненной"
+        className={cn(
+          "flex shrink-0 touch-manipulation items-center justify-center rounded-full border border-border bg-background text-foreground transition-colors hover:bg-foreground/[0.06]",
+          inlineTrigger
+            ? "min-h-11 min-w-11"
+            : "absolute bottom-3 right-3 z-10 min-h-11 min-w-11"
+        )}
+        aria-label="Сдать отчёт по смене"
         onClick={() => setOpen(true)}
       >
         <ClipboardCheck size={18} className="shrink-0" aria-hidden />
