@@ -154,7 +154,7 @@ export default async function SchedulePage({
         />
 
         {view === "brigades" ? (
-          <>
+          <div data-no-swipe="true" className="space-y-4">
             <WeekModeSwitch
               mode={weekMode}
               currentWeekStartIso={currentWeekStart.toISOString()}
@@ -173,11 +173,11 @@ export default async function SchedulePage({
               canRemoveShifts={canRemoveScheduleShifts}
               assignableEmployees={assignableEmployees}
             />
-          </>
+          </div>
         ) : null}
 
         {view === "table" ? (
-          <>
+          <div data-no-swipe="true" className="space-y-4">
             <WeekModeSwitch
               mode={weekMode}
               currentWeekStartIso={currentWeekStart.toISOString()}
@@ -187,7 +187,7 @@ export default async function SchedulePage({
               monthMonth={monthParsed.month}
             />
             <ScheduleWeekTable employees={weekTableRows} weekStartDateIso={weekStartDate.toISOString()} />
-          </>
+          </div>
         ) : null}
 
         {view === "month" ? (

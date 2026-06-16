@@ -10,8 +10,7 @@ const VERTICAL_TOLERANCE = 48;
 export function SwipePageSwitch({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname() ?? "";
-  const swipeEnabled =
-    !isStandalonePwa() && (pathname.startsWith("/schedule") || pathname.startsWith("/me"));
+  const swipeEnabled = !isStandalonePwa() && pathname.startsWith("/me");
   const startX = useRef<number | null>(null);
   const startY = useRef<number | null>(null);
 
@@ -42,12 +41,8 @@ export function SwipePageSwitch({ children }: { children: React.ReactNode }) {
     startY.current = null;
 
     if (Math.abs(deltaX) < SWIPE_THRESHOLD || Math.abs(deltaY) > VERTICAL_TOLERANCE) return;
-    if (pathname.startsWith("/schedule")) {
-      if (deltaX < 0) router.push("/me");
-      return;
-    }
-    if (pathname.startsWith("/me")) {
-      if (deltaX > 0) router.push("/schedule");
+    if (pathname.startsWith("/me") && deltaX > 0) {
+      router.push("/schedule");
     }
   };
 
